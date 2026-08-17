@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-watermonitor}
+      POSTGRES_USER: ${POSTGRES_USER:-watermonitor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-watermonitor}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-watermonitor} -d ${POSTGRES_DB:-watermonitor}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://watermonitor:watermonitor@db:5432/watermonitor}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
+      RWS_TIMEOUT_SECONDS: ${RWS_TIMEOUT_SECONDS:-20}
+      RWS_USE_FALLBACK_MEASUREMENTS: ${RWS_USE_FALLBACK_MEASUREMENTS:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - backend_venv:/app/.venv
+    command: >
+      sh -c "uv run alembic upgrade head &&
+             uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+    command: npm run dev -- --hostname 0.0.0.0
+
+volumes:
+  postgres_data:
+  backend_venv:
+  frontend_node_modules:
+  frontend_next:
