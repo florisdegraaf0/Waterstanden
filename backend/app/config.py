@@ -37,6 +37,11 @@ class Settings(BaseSettings):
             return value.replace("postgres://", "postgresql+psycopg://", 1)
         return value
 
+    @property
+    def allowed_origins(self) -> list[str]:
+        value = self.cors_allow_origins or self.frontend_origin
+        return [origin.strip() for origin in value.split(",") if origin.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:
