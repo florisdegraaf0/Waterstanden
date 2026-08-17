@@ -59,10 +59,27 @@ export type SeasonalContext = {
 };
 
 async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`);
+  const url = `${API_BASE_URL}${path}`;
+  let response: Response;
+
+  try {
+    response = await fetch(url);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Network request failed";
+    throw new Error(`Could not reach API at ${url}: ${detail}`);
+  }
 
   if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
+    let detail = response.statusText;
+    try {
+      const body = (await response.json()) as { detail?: unknown };
+      if (typeof body.detail === "string") {
+        detail = body.detail;
+      }
+    } catch {
+      // Keep the HTTP status text when the response is not JSON.
+    }
+    throw new Error(`API request failed: ${response.status} ${detail}`);
   }
 
   return response.json() as Promise<T>;

@@ -61,9 +61,10 @@ export function WaterMap() {
           setStations(result);
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!cancelled) {
-          setStationsError("Could not load Rijkswaterstaat stations.");
+          const detail = error instanceof Error ? error.message : "Unknown error";
+          setStationsError(`Could not load Rijkswaterstaat stations. ${detail}`);
         }
       })
       .finally(() => {
