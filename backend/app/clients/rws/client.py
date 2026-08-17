@@ -27,6 +27,21 @@ _LATEST_WATER_LEVEL_FILTER = (
     "</Filter>"
 )
 
+_LATEST_WATER_LEVEL_PROPERTIES = (
+    "CODE",
+    "NAAM",
+    "GEOMETRY",
+    "WAARDE_LAATSTE_METING",
+    "EENHEIDCODE",
+    "TIJDSTIP_LAATSTE_METING",
+    "PARAMETER_WAT_OMSCHRIJVING",
+    "STATUSWAARDE",
+    "KWALITEITSWAARDE_CODE",
+    "GROOTHEIDCODE",
+    "COMPARTIMENTCODE",
+    "HOEDANIGHEIDCODE",
+)
+
 
 class RwsClient:
     def __init__(self, settings: Settings, http_client: httpx.AsyncClient | None = None) -> None:
@@ -45,6 +60,8 @@ class RwsClient:
             "REQUEST": "GetFeature",
             "TYPENAME": "locatiesmetlaatstewaarneming",
             "FILTER": _LATEST_WATER_LEVEL_FILTER,
+            "PROPERTYNAME": ",".join(_LATEST_WATER_LEVEL_PROPERTIES),
+            "MAXFEATURES": str(self._settings.rws_wfs_max_features),
             "outputFormat": "csv",
             "format_options": "csvseparator:semicolon",
         }

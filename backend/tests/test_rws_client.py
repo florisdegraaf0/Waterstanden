@@ -33,3 +33,9 @@ async def test_latest_water_level_locations_are_filtered_at_wfs_boundary() -> No
     assert "<Literal>WATHTE</Literal>" in filter_param
     assert "<PropertyName>COMPARTIMENTCODE</PropertyName>" in filter_param
     assert "<Literal>OW</Literal>" in filter_param
+    assert captured_request.url.params["MAXFEATURES"] == "1000"
+    assert captured_request.url.params["PROPERTYNAME"] == (
+        "CODE,NAAM,GEOMETRY,WAARDE_LAATSTE_METING,EENHEIDCODE,TIJDSTIP_LAATSTE_METING,"
+        "PARAMETER_WAT_OMSCHRIJVING,STATUSWAARDE,KWALITEITSWAARDE_CODE,GROOTHEIDCODE,"
+        "COMPARTIMENTCODE,HOEDANIGHEIDCODE"
+    )
