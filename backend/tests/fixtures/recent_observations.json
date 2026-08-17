@@ -1,0 +1,25 @@
+{
+  "WaarnemingenLijst": [
+    {
+      "AquoMetadata": {
+        "Compartiment": {"Code": "OW"},
+        "Grootheid": {"Code": "WATHTE"},
+        "Eenheid": {"Code": "cm"},
+        "Hoedanigheid": {"Code": "NAP"}
+      },
+      "MetingenLijst": [
+        {
+          "Tijdstip": "2026-08-17T10:00:00.000Z",
+          "Meetwaarde": {"Waarde_Numeriek": 120},
+          "Kwaliteitswaarde": {"Code": "00"}
+        },
+        {
+          "Tijdstip": "2026-08-17T10:10:00.000Z",
+          "Meetwaarde": {"Waarde_Numeriek": 123},
+          "Kwaliteitswaarde": {"Code": "10"}
+        }
+      ]
+    }
+  ]
+}
+
