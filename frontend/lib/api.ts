@@ -28,7 +28,8 @@ export type SeasonalStatus =
   | "normal"
   | "unusually_high"
   | "extremely_high"
-  | "insufficient_data";
+  | "insufficient_data"
+  | "historical_data_unavailable";
 
 export type SeasonalContext = {
   station_id: string;

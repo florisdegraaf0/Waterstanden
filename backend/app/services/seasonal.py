@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -5,6 +6,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.domain.models import SeasonalContext, Station
 from app.domain.seasonal import SeasonalConfig, calculate_seasonal_context
 from app.repositories.water import WaterRepository
+
+logger = logging.getLogger(__name__)
 
 
 class SeasonalContextService:
@@ -23,7 +26,10 @@ class SeasonalContextService:
                 reference_values=None,
             )
 
-        daily_values = self._list_daily_statistics_or_empty(station.id, parameter)
+        daily_values, error = self._list_daily_statistics_or_empty(station.id, parameter)
+        if error is not None:
+            return _historical_data_unavailable(self._config.window_days)
+
         return calculate_seasonal_context(
             current_value=station.latest_value,
             current_date=station.measured_at.date(),
@@ -49,7 +55,10 @@ class SeasonalContextService:
                 reference_values=None,
             )
 
-        daily_values = self._list_daily_statistics_or_empty(station_id, parameter)
+        daily_values, error = self._list_daily_statistics_or_empty(station_id, parameter)
+        if error is not None:
+            return _historical_data_unavailable(self._config.window_days)
+
         return calculate_seasonal_context(
             current_value=current_value,
             current_date=measured_at.date(),
@@ -59,12 +68,28 @@ class SeasonalContextService:
 
     def _list_daily_statistics_or_empty(self, station_id: str, parameter: str):
         try:
-            return self._repository.list_daily_statistics(station_id, parameter)
-        except SQLAlchemyError:
-            return []
+            return self._repository.list_daily_statistics(station_id, parameter), None
+        except SQLAlchemyError as exc:
+            logger.warning(
+                "Historical seasonal data query failed",
+                extra={"station_id": station_id, "parameter": parameter},
+                exc_info=exc,
+            )
+            return [], exc
 
 
 def _empty_reference_period(window_days: int):
     from app.domain.models import ReferencePeriod
 
     return ReferencePeriod(window_days=window_days, first_year=None, last_year=None)
+
+
+def _historical_data_unavailable(window_days: int) -> SeasonalContext:
+    return SeasonalContext(
+        status="historical_data_unavailable",
+        percentile=None,
+        sample_size=0,
+        years_used=0,
+        reference_period=_empty_reference_period(window_days),
+        reference_values=None,
+    )

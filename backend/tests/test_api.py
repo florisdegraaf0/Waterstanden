@@ -249,4 +249,4 @@ async def test_seasonal_context_endpoint_handles_missing_historical_tables(
         )
 
     assert response.status_code == 200
-    assert response.json()["seasonal_context"]["status"] == "insufficient_data"
+    assert response.json()["seasonal_context"]["status"] == "historical_data_unavailable"

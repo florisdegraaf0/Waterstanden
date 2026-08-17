@@ -118,6 +118,20 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
   }
 
   const seasonal = context.seasonal_context;
+  if (seasonal.status === "historical_data_unavailable") {
+    return (
+      <section className="border-y border-slate-200 py-4">
+        <div className="text-sm font-semibold text-ink">Seasonal context</div>
+        <div className="mt-2 text-sm font-medium text-amber-700">
+          Historical comparison is unavailable.
+        </div>
+        <div className="mt-1 text-xs text-slate-500">
+          The stored historical dataset could not be read.
+        </div>
+      </section>
+    );
+  }
+
   if (seasonal.status === "insufficient_data" || seasonal.percentile == null) {
     return (
       <section className="border-y border-slate-200 py-4">
@@ -196,7 +210,8 @@ function statusLabel(status: SeasonalStatus) {
     normal: "Normal",
     unusually_high: "Unusually high",
     extremely_high: "Extremely high",
-    insufficient_data: "Limited data"
+    insufficient_data: "Limited data",
+    historical_data_unavailable: "Unavailable"
   };
   return labels[status];
 }
