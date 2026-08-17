@@ -22,6 +22,7 @@ async def sync_active_stations(active_station_max_age_hours: int | None = None) 
             client,
             active_station_max_age_hours=max_age_hours,
             active_station_recent_check_concurrency=settings.active_station_recent_check_concurrency,
+            active_station_verify_recent_measurements=True,
         ).list_stations()
         active_ids = {station.id for station in stations}
         with SessionLocal() as db:

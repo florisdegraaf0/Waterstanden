@@ -17,12 +17,14 @@ class WaterService:
         use_fallback_measurements: bool = True,
         active_station_max_age_hours: int = 24,
         active_station_recent_check_concurrency: int = 10,
+        active_station_verify_recent_measurements: bool = False,
         now: datetime | None = None,
     ) -> None:
         self._rws_client = rws_client
         self._use_fallback_measurements = use_fallback_measurements
         self._active_station_max_age = timedelta(hours=active_station_max_age_hours)
         self._active_station_recent_check_concurrency = active_station_recent_check_concurrency
+        self._active_station_verify_recent_measurements = active_station_verify_recent_measurements
         self._now = now
 
     async def list_stations(self) -> list[Station]:
@@ -58,7 +60,11 @@ class WaterService:
                 )
             )
 
-        stations = await self._filter_stations_with_recent_measurements(candidates, cutoff)
+        stations = (
+            await self._filter_stations_with_recent_measurements(candidates, cutoff)
+            if self._active_station_verify_recent_measurements
+            else candidates
+        )
         return sorted(stations, key=lambda station: station.name.lower())
 
     async def get_station(self, station_id: str) -> Station:

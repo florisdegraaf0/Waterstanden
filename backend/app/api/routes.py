@@ -39,6 +39,7 @@ async def list_stations(
         rws_client,
         active_station_max_age_hours=settings.active_station_max_age_hours,
         active_station_recent_check_concurrency=settings.active_station_recent_check_concurrency,
+        active_station_verify_recent_measurements=settings.active_station_verify_recent_measurements,
     )
     return await service.list_stations()
 
@@ -53,6 +54,7 @@ async def get_station(
         rws_client,
         active_station_max_age_hours=settings.active_station_max_age_hours,
         active_station_recent_check_concurrency=settings.active_station_recent_check_concurrency,
+        active_station_verify_recent_measurements=settings.active_station_verify_recent_measurements,
     )
     return await service.get_station(station_id)
 

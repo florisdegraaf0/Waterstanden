@@ -14,6 +14,9 @@ class FailingRwsClient:
 
 
 class StationRwsClient:
+    def __init__(self) -> None:
+        self.recent_calls: list[str] = []
+
     async def fetch_latest_water_level_locations(self) -> list[RwsLatestObservation]:
         return [
             _observation("active", datetime(2026, 8, 17, 10, 0, tzinfo=UTC), 937),
@@ -23,6 +26,7 @@ class StationRwsClient:
         ]
 
     async def fetch_recent_measurements(self, station_code: str, hours: int) -> list[Measurement]:
+        self.recent_calls.append(station_code)
         if station_code != "active":
             return []
         return [
@@ -60,12 +64,28 @@ async def test_list_stations_only_includes_parsed_measurements_from_last_24_hour
         StationRwsClient(),
         now=datetime(2026, 8, 17, 10, 0, tzinfo=UTC),
         active_station_max_age_hours=24,
+        active_station_verify_recent_measurements=True,
     )
 
     stations = await service.list_stations()
 
     assert [station.id for station in stations] == ["active"]
     assert stations[0].latest_value == pytest.approx(9.37)
+
+
+@pytest.mark.asyncio
+async def test_list_stations_does_not_check_recent_measurements_by_default() -> None:
+    rws_client = StationRwsClient()
+    service = WaterService(
+        rws_client,
+        now=datetime(2026, 8, 17, 10, 0, tzinfo=UTC),
+        active_station_max_age_hours=24,
+    )
+
+    stations = await service.list_stations()
+
+    assert [station.id for station in stations] == ["active", "no-recent"]
+    assert rws_client.recent_calls == []
 
 
 def _observation(

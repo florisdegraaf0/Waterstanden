@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     rws_use_fallback_measurements: bool = True
     active_station_max_age_hours: int = 24
     active_station_recent_check_concurrency: int = 10
+    active_station_verify_recent_measurements: bool = False
     seasonal_window_days: int = 14
     seasonal_min_sample_size: int = 150
     seasonal_min_years: int = 10

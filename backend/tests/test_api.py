@@ -219,3 +219,34 @@ async def test_seasonal_context_endpoint_without_current_value_is_fast_insuffici
 
     assert response.status_code == 200
     assert response.json()["seasonal_context"]["status"] == "insufficient_data"
+
+
+@pytest.mark.asyncio
+async def test_seasonal_context_endpoint_handles_missing_historical_tables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sqlalchemy.exc import ProgrammingError
+
+    class FakeRepository:
+        def __init__(self, _db: object) -> None:
+            pass
+
+        def list_daily_statistics(self, station_external_id: str, parameter: str):
+            raise ProgrammingError("select 1", {}, Exception("missing table"))
+
+    monkeypatch.setattr(routes, "WaterRepository", FakeRepository)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            "/api/stations/lobith/seasonal-context",
+            params={
+                "current_value": 9.37,
+                "current_unit": "m NAP",
+                "measured_at": RECENT_MEASURED_AT.isoformat(),
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["seasonal_context"]["status"] == "insufficient_data"
