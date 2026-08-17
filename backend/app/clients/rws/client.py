@@ -12,6 +12,38 @@ from app.exceptions import ExternalServiceError
 
 logger = logging.getLogger(__name__)
 
+_MAX_WFS_RESPONSE_BYTES = 5_000_000
+
+_LATEST_WATER_LEVEL_FILTER = (
+    "<Filter>"
+    "<And>"
+    "<PropertyIsEqualTo>"
+    "<PropertyName>GROOTHEIDCODE</PropertyName>"
+    "<Literal>WATHTE</Literal>"
+    "</PropertyIsEqualTo>"
+    "<PropertyIsEqualTo>"
+    "<PropertyName>COMPARTIMENTCODE</PropertyName>"
+    "<Literal>OW</Literal>"
+    "</PropertyIsEqualTo>"
+    "</And>"
+    "</Filter>"
+)
+
+_LATEST_WATER_LEVEL_PROPERTIES = (
+    "CODE",
+    "NAAM",
+    "GEOMETRY",
+    "WAARDE_LAATSTE_METING",
+    "EENHEIDCODE",
+    "TIJDSTIP_LAATSTE_METING",
+    "PARAMETER_WAT_OMSCHRIJVING",
+    "STATUSWAARDE",
+    "KWALITEITSWAARDE_CODE",
+    "GROOTHEIDCODE",
+    "COMPARTIMENTCODE",
+    "HOEDANIGHEIDCODE",
+)
+
 
 class RwsClient:
     def __init__(self, settings: Settings, http_client: httpx.AsyncClient | None = None) -> None:
@@ -29,18 +61,24 @@ class RwsClient:
             "VERSION": "1.1.0",
             "REQUEST": "GetFeature",
             "TYPENAME": "locatiesmetlaatstewaarneming",
+            "FILTER": _LATEST_WATER_LEVEL_FILTER,
+            "PROPERTYNAME": ",".join(_LATEST_WATER_LEVEL_PROPERTIES),
+            "MAXFEATURES": str(self._settings.rws_wfs_max_features),
             "outputFormat": "csv",
             "format_options": "csvseparator:semicolon",
         }
         try:
-            response = await self._client.get(self._settings.rws_wfs_base_url, params=params)
-            response.raise_for_status()
+            async with self._client.stream(
+                "GET", self._settings.rws_wfs_base_url, params=params
+            ) as response:
+                response.raise_for_status()
+                csv_text = await _read_limited_text(response, _MAX_WFS_RESPONSE_BYTES)
         except httpx.HTTPError as exc:
             logger.warning("RWS WFS latest observations request failed", exc_info=exc)
             message = "Rijkswaterstaat latest observations are unavailable"
             raise ExternalServiceError(message) from exc
 
-        return parse_latest_observations_csv(response.text)
+        return parse_latest_observations_csv(csv_text)
 
     async def fetch_recent_measurements(self, station_code: str, hours: int) -> list[Measurement]:
         end = datetime.now(UTC)
@@ -85,3 +123,18 @@ class RwsClient:
 
 def _rws_datetime(value: datetime) -> str:
     return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+async def _read_limited_text(response: httpx.Response, max_bytes: int) -> str:
+    chunks: list[bytes] = []
+    total_bytes = 0
+
+    async for chunk in response.aiter_bytes():
+        total_bytes += len(chunk)
+        if total_bytes > max_bytes:
+            message = "Rijkswaterstaat WFS response exceeded the configured size limit"
+            raise ExternalServiceError(message)
+        chunks.append(chunk)
+
+    content = b"".join(chunks)
+    return content.decode(response.encoding or "utf-8", errors="replace")
