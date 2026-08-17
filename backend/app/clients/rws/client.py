@@ -12,6 +12,21 @@ from app.exceptions import ExternalServiceError
 
 logger = logging.getLogger(__name__)
 
+_LATEST_WATER_LEVEL_FILTER = (
+    "<Filter>"
+    "<And>"
+    "<PropertyIsEqualTo>"
+    "<PropertyName>GROOTHEIDCODE</PropertyName>"
+    "<Literal>WATHTE</Literal>"
+    "</PropertyIsEqualTo>"
+    "<PropertyIsEqualTo>"
+    "<PropertyName>COMPARTIMENTCODE</PropertyName>"
+    "<Literal>OW</Literal>"
+    "</PropertyIsEqualTo>"
+    "</And>"
+    "</Filter>"
+)
+
 
 class RwsClient:
     def __init__(self, settings: Settings, http_client: httpx.AsyncClient | None = None) -> None:
@@ -29,6 +44,7 @@ class RwsClient:
             "VERSION": "1.1.0",
             "REQUEST": "GetFeature",
             "TYPENAME": "locatiesmetlaatstewaarneming",
+            "FILTER": _LATEST_WATER_LEVEL_FILTER,
             "outputFormat": "csv",
             "format_options": "csvseparator:semicolon",
         }
