@@ -47,3 +47,64 @@ def test_parse_recent_observations_response() -> None:
     assert all(measurement.unit == "m NAP" for measurement in measurements)
     assert measurements[0].quality_code == "00"
 
+
+def test_parse_historical_observations_preserves_source_metadata() -> None:
+    payload = {
+        "WaarnemingenLijst": [
+            {
+                "Locatie": {
+                    "Naam": "Lobith, Bovenrijn, Tolkamer",
+                    "Code": "lobith.bovenrijn.tolkamer",
+                },
+                "AquoMetadata": {
+                    "Compartiment": {"Code": "OW"},
+                    "Eenheid": {"Code": "cm"},
+                    "Grootheid": {"Code": "WATHTE"},
+                    "Hoedanigheid": {"Code": "NAP"},
+                    "MeetApparaat": {"Code": "10042"},
+                    "ProcesType": "meting",
+                    "WaardeBepalingsmethode": {"Code": "other:F007"},
+                    "WaardeBewerkingsmethode": {"Code": "NVT"},
+                },
+                "WaarnemingMetadata": {
+                    "OpdrachtgevendeInstantieLijst": [{"Code": "RIKZMON_WAT"}],
+                    "BemonsteringshoogteLijst": ["0"],
+                },
+                "MetingenLijst": [
+                    {
+                        "Tijdstip": "2025-08-17T01:00:00.000Z",
+                        "Meetwaarde": {"Waarde_Numeriek": 781},
+                        "WaarnemingMetadata": {
+                            "Kwaliteitswaardecode": {"Code": "00"},
+                        },
+                    },
+                    {
+                        "Tijdstip": "2025-08-17T01:10:00.000Z",
+                        "Meetwaarde": {"Waarde_Numeriek": ""},
+                    },
+                ],
+            }
+        ]
+    }
+
+    measurements = parse_observations_response(payload)
+
+    assert len(measurements) == 1
+    assert measurements[0].value == pytest.approx(7.81)
+    assert measurements[0].source_station_code == "lobith.bovenrijn.tolkamer"
+    assert measurements[0].source_unit == "cm"
+    assert measurements[0].source_metadata == {
+        "source": "rws_ddapi20_waterwebservices_observations",
+        "station_code": "lobith.bovenrijn.tolkamer",
+        "station_name": "Lobith, Bovenrijn, Tolkamer",
+        "unit": "cm",
+        "grootheid": "WATHTE",
+        "compartiment": "OW",
+        "hoedanigheid": "NAP",
+        "proces_type": "meting",
+        "meetapparaat": "10042",
+        "waardebepalingsmethode": "other:F007",
+        "waardebewerkingsmethode": "NVT",
+        "opdrachtgevende_instantie": "RIKZMON_WAT",
+        "bemonsteringshoogte": "0",
+    }

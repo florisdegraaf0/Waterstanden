@@ -22,6 +22,42 @@ export type MeasurementPoint = {
   quality_code: string | null;
 };
 
+export type SeasonalStatus =
+  | "extremely_low"
+  | "unusually_low"
+  | "normal"
+  | "unusually_high"
+  | "extremely_high"
+  | "insufficient_data";
+
+export type SeasonalContext = {
+  station_id: string;
+  parameter: string;
+  current: {
+    value: number | null;
+    unit: string | null;
+    measured_at: string | null;
+  };
+  seasonal_context: {
+    percentile: number | null;
+    status: SeasonalStatus;
+    sample_size: number;
+    years_used: number;
+    reference_period: {
+      window_days: number;
+      first_year: number | null;
+      last_year: number | null;
+    };
+    reference_values: {
+      p05: number;
+      p25: number;
+      p50: number;
+      p75: number;
+      p95: number;
+    } | null;
+  };
+};
+
 async function fetchJson<T>(path: string): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
   let response: Response;
@@ -61,5 +97,11 @@ export function fetchMeasurements(stationId: string, hours: number): Promise<Mea
   const params = new URLSearchParams({ hours: String(hours) });
   return fetchJson<MeasurementPoint[]>(
     `/api/stations/${encodeURIComponent(stationId)}/measurements?${params}`
+  );
+}
+
+export function fetchSeasonalContext(stationId: string): Promise<SeasonalContext> {
+  return fetchJson<SeasonalContext>(
+    `/api/stations/${encodeURIComponent(stationId)}/seasonal-context`
   );
 }

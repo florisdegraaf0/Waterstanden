@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     rws_timeout_seconds: float = 20.0
     rws_wfs_max_features: int = 1000
     rws_use_fallback_measurements: bool = True
+    seasonal_window_days: int = 14
+    seasonal_min_sample_size: int = 150
+    seasonal_min_years: int = 10
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

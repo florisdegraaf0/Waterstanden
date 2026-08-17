@@ -23,7 +23,7 @@ export function WaterLevelChart({ measurements }: Props) {
       day: "2-digit",
       month: "2-digit"
     }).format(new Date(point.measured_at)),
-    value: point.value
+    value: roundMeters(point.value)
   }));
 
   return (
@@ -43,9 +43,10 @@ export function WaterLevelChart({ measurements }: Props) {
             tickLine={false}
             axisLine={{ stroke: "#d7e0de" }}
             domain={["dataMin - 0.1", "dataMax + 0.1"]}
+            tickFormatter={(value) => formatMeters(Number(value))}
           />
           <Tooltip
-            formatter={(value) => [`${Number(value).toFixed(2)} m`, "Waterhoogte"]}
+            formatter={(value) => [`${formatMeters(Number(value))} m`, "Waterhoogte"]}
             labelClassName="text-xs text-slate-500"
             contentStyle={{ borderRadius: 6, borderColor: "#d7e0de" }}
           />
@@ -56,3 +57,10 @@ export function WaterLevelChart({ measurements }: Props) {
   );
 }
 
+function roundMeters(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function formatMeters(value: number): string {
+  return roundMeters(value).toFixed(2);
+}

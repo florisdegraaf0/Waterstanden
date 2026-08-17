@@ -51,10 +51,12 @@ def parse_observations_response(payload: dict[str, Any]) -> list[Measurement]:
     measurements: list[Measurement] = []
     for series in payload.get("WaarnemingenLijst", []):
         metadata = series.get("AquoMetadata", {})
+        location = series.get("Locatie", {})
         unit_code = _nested_code(metadata, "Eenheid")
         hoedanigheid_code = _nested_code(metadata, "Hoedanigheid")
         unit = _display_unit(unit_code, hoedanigheid_code)
         parameter = _parameter_name(_nested_code(metadata, "Grootheid"))
+        source_metadata = _source_metadata(series)
 
         for item in series.get("MetingenLijst", []):
             value = _parse_optional_float(item.get("Meetwaarde", {}).get("Waarde_Numeriek"))
@@ -69,7 +71,10 @@ def parse_observations_response(payload: dict[str, Any]) -> list[Measurement]:
                     value=value,
                     unit=unit,
                     parameter=parameter,
-                    quality_code=item.get("Kwaliteitswaarde", {}).get("Code"),
+                    quality_code=_measurement_quality_code(item),
+                    source_station_code=_blank_to_none(location.get("Code")),
+                    source_unit=unit_code,
+                    source_metadata=source_metadata,
                 )
             )
 
@@ -163,6 +168,63 @@ def _nested_code(payload: dict[str, Any], key: str) -> str | None:
     return None
 
 
+def _measurement_quality_code(item: dict[str, Any]) -> str | None:
+    legacy = item.get("Kwaliteitswaarde")
+    if isinstance(legacy, dict):
+        code = legacy.get("Code")
+        if code is not None:
+            return str(code)
+
+    metadata = item.get("WaarnemingMetadata")
+    if isinstance(metadata, dict):
+        quality = metadata.get("Kwaliteitswaardecode")
+        if isinstance(quality, dict):
+            code = quality.get("Code")
+            return str(code) if code is not None else None
+    return None
+
+
+def _source_metadata(series: dict[str, Any]) -> dict[str, str | float | None]:
+    metadata = series.get("AquoMetadata", {})
+    location = series.get("Locatie", {})
+    observation_metadata = series.get("WaarnemingMetadata", {})
+    return {
+        "source": "rws_ddapi20_waterwebservices_observations",
+        "station_code": _blank_to_none(location.get("Code")),
+        "station_name": _blank_to_none(location.get("Naam")),
+        "unit": _nested_code(metadata, "Eenheid"),
+        "grootheid": _nested_code(metadata, "Grootheid"),
+        "compartiment": _nested_code(metadata, "Compartiment"),
+        "hoedanigheid": _nested_code(metadata, "Hoedanigheid"),
+        "proces_type": (
+            metadata.get("ProcesType") if isinstance(metadata.get("ProcesType"), str) else None
+        ),
+        "meetapparaat": _nested_code(metadata, "MeetApparaat"),
+        "waardebepalingsmethode": _nested_code(metadata, "WaardeBepalingsmethode"),
+        "waardebewerkingsmethode": _nested_code(metadata, "WaardeBewerkingsmethode"),
+        "opdrachtgevende_instantie": _first_nested_code(
+            observation_metadata,
+            "OpdrachtgevendeInstantieLijst",
+        ),
+        "bemonsteringshoogte": _first_value(observation_metadata, "BemonsteringshoogteLijst"),
+    }
+
+
+def _first_nested_code(payload: dict[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if isinstance(value, list) and value and isinstance(value[0], dict):
+        code = value[0].get("Code")
+        return str(code) if code is not None else None
+    return None
+
+
+def _first_value(payload: dict[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if isinstance(value, list) and value:
+        return str(value[0])
+    return None
+
+
 def _display_unit(unit_code: str | None, hoedanigheid_code: str | None) -> str:
     if unit_code == "cm":
         return "m NAP" if hoedanigheid_code == "NAP" else "m"
@@ -173,4 +235,3 @@ def _parameter_name(grootheid_code: str | None) -> str:
     if grootheid_code == WATER_LEVEL_CODE:
         return "water_level"
     return grootheid_code or "unknown"
-
