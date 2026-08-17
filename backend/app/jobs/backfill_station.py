@@ -7,9 +7,7 @@ from datetime import UTC, date, datetime, time, timedelta
 
 from app.clients.rws.client import RwsClient
 from app.config import get_settings
-from app.db.session import SessionLocal
 from app.domain.models import Station
-from app.repositories.water import WaterRepository
 from app.services.water import WaterService
 
 logger = logging.getLogger(__name__)
@@ -25,6 +23,9 @@ async def run_backfill(
     settings = get_settings()
     client = RwsClient(settings)
     try:
+        from app.db.session import SessionLocal
+        from app.repositories.water import WaterRepository
+
         station = await _get_station_for_backfill(client, station_id)
         with SessionLocal() as db:
             repository = WaterRepository(db)
@@ -113,7 +114,6 @@ def _is_selected_lobith_series(source_metadata: dict[str, object]) -> bool:
         source_metadata.get("hoedanigheid") == "NAP"
         and source_metadata.get("proces_type") == "meting"
         and source_metadata.get("meetapparaat") == "10042"
-        and source_metadata.get("waardebepalingsmethode") == "other:F007"
     )
 
 
