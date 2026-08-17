@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,6 +13,7 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://watermonitor:watermonitor@db:5432/watermonitor"
     )
     frontend_origin: str = "http://localhost:3000"
+    cors_allow_origins: str | None = None
 
     rws_wfs_base_url: str = "https://geo.rijkswaterstaat.nl/services/ogc/hws/DDAPI20/ows"
     rws_waterwebservices_base_url: str = "https://ddapi20-waterwebservices.rijkswaterstaat.nl"
@@ -21,6 +22,12 @@ class Settings(BaseSettings):
     rws_use_fallback_measurements: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+    @computed_field
+    @property
+    def allowed_origins(self) -> list[str]:
+        value = self.cors_allow_origins or self.frontend_origin
+        return [origin.strip() for origin in value.split(",") if origin.strip()]
 
 
 @lru_cache

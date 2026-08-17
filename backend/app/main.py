@@ -14,7 +14,7 @@ app = FastAPI(title=settings.app_name)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_origin],
+    allow_origins=settings.allowed_origins,
     allow_credentials=False,
     allow_methods=["GET"],
     allow_headers=["*"],
@@ -35,4 +35,3 @@ async def external_service_handler(_request: Request, exc: ExternalServiceError)
 @app.exception_handler(ExternalDataError)
 async def external_data_handler(_request: Request, exc: ExternalDataError) -> JSONResponse:
     return JSONResponse(status_code=502, content={"detail": str(exc)})
-

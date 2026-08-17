@@ -52,9 +52,10 @@ export function WaterMap() {
           setStations(result);
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!cancelled) {
-          setStationsError("Could not load Rijkswaterstaat stations.");
+          const detail = error instanceof Error ? error.message : "Unknown error";
+          setStationsError(`Could not load Rijkswaterstaat stations. ${detail}`);
         }
       })
       .finally(() => {
@@ -104,8 +105,9 @@ export function WaterMap() {
       ]);
       setSelectedStation(station);
       setMeasurements(stationMeasurements);
-    } catch {
-      setMeasurementsError("Recent measurements are temporarily unavailable.");
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unknown error";
+      setMeasurementsError(`Recent measurements are temporarily unavailable. ${detail}`);
     } finally {
       setMeasurementsLoading(false);
     }
@@ -147,4 +149,3 @@ export function WaterMap() {
     </main>
   );
 }
-
