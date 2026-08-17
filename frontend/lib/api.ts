@@ -83,8 +83,18 @@ export function fetchMeasurements(stationId: string, hours: number): Promise<Mea
   );
 }
 
-export function fetchSeasonalContext(stationId: string): Promise<SeasonalContext> {
+export function fetchSeasonalContext(station: Station): Promise<SeasonalContext> {
+  const params = new URLSearchParams({ parameter: "water_level" });
+  if (station.latest_value != null) {
+    params.set("current_value", String(station.latest_value));
+  }
+  if (station.unit) {
+    params.set("current_unit", station.unit);
+  }
+  if (station.measured_at) {
+    params.set("measured_at", station.measured_at);
+  }
   return fetchJson<SeasonalContext>(
-    `/api/stations/${encodeURIComponent(stationId)}/seasonal-context`
+    `/api/stations/${encodeURIComponent(station.id)}/seasonal-context?${params}`
   );
 }

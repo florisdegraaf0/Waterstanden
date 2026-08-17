@@ -39,10 +39,10 @@ class FakeRwsClient:
 
     async def fetch_recent_measurements(self, station_code: str, hours: int) -> list[Measurement]:
         assert station_code == "lobith"
-        assert hours == 48
+        assert hours in {24, 48}
         return [
             Measurement(
-                measured_at=datetime(2026, 8, 17, 10, 0, tzinfo=UTC),
+                measured_at=RECENT_MEASURED_AT,
                 value=9.37,
                 unit="m NAP",
                 parameter="water_level",
@@ -142,7 +142,14 @@ async def test_seasonal_context_endpoint_returns_percentile(
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        response = await client.get("/api/stations/lobith/seasonal-context")
+        response = await client.get(
+            "/api/stations/lobith/seasonal-context",
+            params={
+                "current_value": 9.37,
+                "current_unit": "m NAP",
+                "measured_at": RECENT_MEASURED_AT.isoformat(),
+            },
+        )
 
     assert response.status_code == 200
     payload = response.json()
@@ -168,7 +175,14 @@ async def test_seasonal_context_endpoint_handles_insufficient_data(
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        response = await client.get("/api/stations/lobith/seasonal-context")
+        response = await client.get(
+            "/api/stations/lobith/seasonal-context",
+            params={
+                "current_value": 9.37,
+                "current_unit": "m NAP",
+                "measured_at": RECENT_MEASURED_AT.isoformat(),
+            },
+        )
 
     assert response.status_code == 200
     assert response.json()["seasonal_context"] == {
@@ -183,3 +197,25 @@ async def test_seasonal_context_endpoint_handles_insufficient_data(
         },
         "reference_values": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_seasonal_context_endpoint_without_current_value_is_fast_insufficient_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeRepository:
+        def __init__(self, _db: object) -> None:
+            pass
+
+        def list_daily_statistics(self, station_external_id: str, parameter: str):
+            raise AssertionError("daily statistics should not be queried without current value")
+
+    monkeypatch.setattr(routes, "WaterRepository", FakeRepository)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/stations/lobith/seasonal-context")
+
+    assert response.status_code == 200
+    assert response.json()["seasonal_context"]["status"] == "insufficient_data"

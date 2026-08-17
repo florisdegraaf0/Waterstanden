@@ -95,6 +95,13 @@ uv run python -m app.jobs.backfill_station \
 
 The job is idempotent: it upserts raw normalized measurements and recomputes daily median statistics for each chunk. Percentiles compare the current value with historical daily medians in a configurable ±14 day seasonal window, excluding the current year.
 
+To keep the persisted station list limited to currently active stations, run:
+
+```bash
+cd backend
+uv run python -m app.jobs.sync_active_stations --active-max-age-hours 24
+```
+
 ## Data Notes
 
 - Latest stations are filtered to surface-water water-height observations: `COMPARTIMENTCODE=OW`, `GROOTHEIDCODE=WATHTE`.
