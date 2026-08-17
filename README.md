@@ -69,12 +69,35 @@ npm run build
 - `GET /api/stations`
 - `GET /api/stations/{station_id}`
 - `GET /api/stations/{station_id}/measurements?hours=48`
+- `GET /api/stations/{station_id}/seasonal-context?parameter=water_level`
 
 The frontend receives normalized application models only. Rijkswaterstaat-specific response fields stay inside the backend client/service layer.
+
+## Historical Seasonal Percentiles
+
+The first historical percentile slice targets Lobith water level at:
+
+```text
+lobith.bovenrijn.tolkamer
+```
+
+Backfill historical observations before expecting a seasonal percentile:
+
+```bash
+cd backend
+uv run alembic upgrade head
+uv run python -m app.jobs.backfill_station \
+  --station-id lobith.bovenrijn.tolkamer \
+  --parameter water_level \
+  --from 2010-01-01 \
+  --to 2025-12-31
+```
+
+The job is idempotent: it upserts raw normalized measurements and recomputes daily median statistics for each chunk. Percentiles compare the current value with historical daily medians in a configurable ±14 day seasonal window, excluding the current year.
 
 ## Data Notes
 
 - Latest stations are filtered to surface-water water-height observations: `COMPARTIMENTCODE=OW`, `GROOTHEIDCODE=WATHTE`.
 - Source values in centimeters are normalized to meters for app responses.
 - DDAPI20 WFS coordinates were observed as `POINT (latitude longitude)` and are mapped to app fields as `latitude` and `longitude`.
-- The database schema is prepared for later historical ingestion, but the MVP reads live data directly from Rijkswaterstaat.
+- Historical percentile context is read from persisted backfill data and daily aggregates. Live station lists and current values still come directly from Rijkswaterstaat.

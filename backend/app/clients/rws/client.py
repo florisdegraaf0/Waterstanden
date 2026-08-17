@@ -82,6 +82,54 @@ class RwsClient:
 
         return parse_observations_response(response.json())
 
+    async def fetch_historical_measurements(
+        self,
+        station_code: str,
+        begin: datetime,
+        end: datetime,
+    ) -> list[Measurement]:
+        payload: dict[str, Any] = {
+            "Locatie": {"Code": station_code},
+            "AquoPlusWaarnemingMetadata": {
+                "AquoMetadata": {
+                    "Compartiment": {"Code": "OW"},
+                    "Grootheid": {"Code": "WATHTE"},
+                    "ProcesType": "meting",
+                    "Hoedanigheid": {"Code": "NAP"},
+                },
+                "WaarnemingMetadata": {
+                    "KwaliteitswaardecodeLijst": ["00", "10", "20", "25", "30", "40"]
+                },
+            },
+            "Periode": {
+                "Begindatumtijd": _rws_datetime(begin),
+                "Einddatumtijd": _rws_datetime(end),
+            },
+        }
+        url = (
+            f"{self._settings.rws_waterwebservices_base_url}"
+            "/ONLINEWAARNEMINGENSERVICES/OphalenWaarnemingen"
+        )
+        try:
+            response = await self._client.post(url, json=payload)
+            if response.status_code == 204:
+                return []
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.warning(
+                "RWS historical observations request failed",
+                extra={
+                    "station_code": station_code,
+                    "begin": begin.isoformat(),
+                    "end": end.isoformat(),
+                },
+                exc_info=exc,
+            )
+            message = "Rijkswaterstaat historical observations are unavailable"
+            raise ExternalServiceError(message) from exc
+
+        return parse_observations_response(response.json())
+
 
 def _rws_datetime(value: datetime) -> str:
     return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")

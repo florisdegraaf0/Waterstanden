@@ -4,7 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import { AlertCircle, Loader2 } from "lucide-react";
 
-import { fetchMeasurements, fetchStation, fetchStations, type MeasurementPoint, type Station } from "@/lib/api";
+import {
+  fetchMeasurements,
+  fetchSeasonalContext,
+  fetchStation,
+  fetchStations,
+  type MeasurementPoint,
+  type SeasonalContext,
+  type Station
+} from "@/lib/api";
 import { StationPanel } from "@/components/StationPanel";
 
 export function WaterMap() {
@@ -15,6 +23,7 @@ export function WaterMap() {
   const [stations, setStations] = useState<Station[]>([]);
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [measurements, setMeasurements] = useState<MeasurementPoint[]>([]);
+  const [seasonalContext, setSeasonalContext] = useState<SeasonalContext | null>(null);
   const [stationsLoading, setStationsLoading] = useState(true);
   const [stationsError, setStationsError] = useState<string | null>(null);
   const [measurementsLoading, setMeasurementsLoading] = useState(false);
@@ -94,6 +103,7 @@ export function WaterMap() {
     const baseStation = stations.find((station) => station.id === stationId) ?? null;
     setSelectedStation(baseStation);
     setMeasurements([]);
+    setSeasonalContext(null);
     setMeasurementsError(null);
     setMeasurementsLoading(true);
 
@@ -109,6 +119,10 @@ export function WaterMap() {
     } finally {
       setMeasurementsLoading(false);
     }
+
+    fetchSeasonalContext(stationId)
+      .then(setSeasonalContext)
+      .catch(() => setSeasonalContext(null));
   }
 
   return (
@@ -140,6 +154,7 @@ export function WaterMap() {
       <StationPanel
         station={selectedStation}
         measurements={measurements}
+        seasonalContext={seasonalContext}
         loading={measurementsLoading}
         error={measurementsError}
         onClose={() => setSelectedStation(null)}
@@ -147,4 +162,3 @@ export function WaterMap() {
     </main>
   );
 }
-

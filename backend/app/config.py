@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     rws_waterwebservices_base_url: str = "https://ddapi20-waterwebservices.rijkswaterstaat.nl"
     rws_timeout_seconds: float = 20.0
     rws_use_fallback_measurements: bool = True
+    seasonal_window_days: int = 14
+    seasonal_min_sample_size: int = 150
+    seasonal_min_years: int = 10
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
@@ -25,4 +28,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

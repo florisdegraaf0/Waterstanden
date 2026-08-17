@@ -10,29 +10,43 @@ logger = logging.getLogger(__name__)
 
 
 class WaterService:
-    def __init__(self, rws_client: RwsClient, use_fallback_measurements: bool = True) -> None:
+    def __init__(
+        self,
+        rws_client: RwsClient,
+        use_fallback_measurements: bool = True,
+        active_station_max_age: timedelta = timedelta(hours=24),
+        now: datetime | None = None,
+    ) -> None:
         self._rws_client = rws_client
         self._use_fallback_measurements = use_fallback_measurements
+        self._active_station_max_age = active_station_max_age
+        self._now = now
 
     async def list_stations(self) -> list[Station]:
         observations = await self._rws_client.fetch_latest_water_level_locations()
         stations: list[Station] = []
         seen: set[str] = set()
+        now = self._now or datetime.now(UTC)
 
         for observation in observations:
             if observation.code in seen:
                 continue
-            seen.add(observation.code)
             latest = normalize_latest_water_level(observation)
+            if latest is None:
+                continue
+            if latest.measured_at < now - self._active_station_max_age:
+                continue
+
+            seen.add(observation.code)
             stations.append(
                 Station(
                     id=observation.code,
                     name=observation.name,
                     latitude=observation.latitude,
                     longitude=observation.longitude,
-                    latest_value=latest.value if latest else None,
-                    unit=latest.unit if latest else None,
-                    measured_at=latest.measured_at if latest else observation.measured_at,
+                    latest_value=latest.value,
+                    unit=latest.unit,
+                    measured_at=latest.measured_at,
                     parameter="water_level",
                     status=observation.status,
                     quality_code=observation.quality_code,
