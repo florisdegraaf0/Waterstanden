@@ -13,10 +13,12 @@ class Settings(BaseSettings):
         default="postgresql+psycopg://watermonitor:watermonitor@db:5432/watermonitor"
     )
     frontend_origin: str = "http://localhost:3000"
+    cors_allow_origins: str | None = None
 
     rws_wfs_base_url: str = "https://geo.rijkswaterstaat.nl/services/ogc/hws/DDAPI20/ows"
     rws_waterwebservices_base_url: str = "https://ddapi20-waterwebservices.rijkswaterstaat.nl"
     rws_timeout_seconds: float = 20.0
+    rws_wfs_max_features: int = 1000
     rws_use_fallback_measurements: bool = True
     active_station_max_age_hours: int = 24
     active_station_recent_check_concurrency: int = 10
