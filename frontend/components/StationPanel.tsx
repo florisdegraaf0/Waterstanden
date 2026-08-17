@@ -118,6 +118,20 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
   }
 
   const seasonal = context.seasonal_context;
+  if (seasonal.status === "insufficient_data" && seasonal.sample_size === 0) {
+    return (
+      <section className="border-y border-slate-200 py-4">
+        <div className="text-sm font-semibold text-ink">Seasonal context</div>
+        <div className="mt-2 text-sm font-medium text-amber-700">
+          No historical backfill data loaded.
+        </div>
+        <div className="mt-1 text-xs text-slate-500">
+          Run the Lobith historical backfill to populate seasonal comparison.
+        </div>
+      </section>
+    );
+  }
+
   if (seasonal.status === "historical_data_unavailable") {
     return (
       <section className="border-y border-slate-200 py-4">
