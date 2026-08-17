@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -30,14 +31,29 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/stations", response_model=list[StationSummary])
-async def list_stations(rws_client: Annotated[RwsClient, Depends(get_rws_client)]):
-    service = WaterService(rws_client)
+async def list_stations(
+    rws_client: Annotated[RwsClient, Depends(get_rws_client)],
+    settings: Annotated[Settings, Depends(get_app_settings)],
+):
+    service = WaterService(
+        rws_client,
+        active_station_max_age_hours=settings.active_station_max_age_hours,
+        active_station_recent_check_concurrency=settings.active_station_recent_check_concurrency,
+    )
     return await service.list_stations()
 
 
 @router.get("/stations/{station_id}", response_model=StationDetail)
-async def get_station(station_id: str, rws_client: Annotated[RwsClient, Depends(get_rws_client)]):
-    service = WaterService(rws_client)
+async def get_station(
+    station_id: str,
+    rws_client: Annotated[RwsClient, Depends(get_rws_client)],
+    settings: Annotated[Settings, Depends(get_app_settings)],
+):
+    service = WaterService(
+        rws_client,
+        active_station_max_age_hours=settings.active_station_max_age_hours,
+        active_station_recent_check_concurrency=settings.active_station_recent_check_concurrency,
+    )
     return await service.get_station(station_id)
 
 
@@ -58,12 +74,13 @@ async def get_measurements(
 @router.get("/stations/{station_id}/seasonal-context", response_model=StationSeasonalContext)
 async def get_seasonal_context(
     station_id: str,
-    rws_client: Annotated[RwsClient, Depends(get_rws_client)],
     settings: Annotated[Settings, Depends(get_app_settings)],
     db: Annotated[Session, Depends(get_db)],
     parameter: str = "water_level",
+    current_value: float | None = None,
+    current_unit: str | None = None,
+    measured_at: datetime | None = None,
 ):
-    station = await WaterService(rws_client).get_station(station_id)
     context = SeasonalContextService(
         WaterRepository(db),
         SeasonalConfig(
@@ -71,14 +88,19 @@ async def get_seasonal_context(
             min_sample_size=settings.seasonal_min_sample_size,
             min_years=settings.seasonal_min_years,
         ),
-    ).get_context(station, parameter)
+    ).get_context_for_current(
+        station_id=station_id,
+        current_value=current_value,
+        measured_at=measured_at,
+        parameter=parameter,
+    )
     return StationSeasonalContext(
-        station_id=station.id,
+        station_id=station_id,
         parameter=parameter,
         current=CurrentMeasurement(
-            value=station.latest_value,
-            unit=station.unit,
-            measured_at=station.measured_at,
+            value=current_value,
+            unit=current_unit,
+            measured_at=measured_at,
         ),
         seasonal_context=SeasonalContextPayload(
             percentile=context.percentile,

@@ -1,16 +1,19 @@
 from app.config import Settings
 
 
-def test_allowed_origins_defaults_to_frontend_origin() -> None:
-    settings = Settings(frontend_origin="https://frontend.example")
+def test_database_url_uses_installed_psycopg_driver_for_postgresql_url() -> None:
+    settings = Settings(database_url="postgresql://user:pass@db:5432/watermonitor")
 
-    assert settings.allowed_origins == ["https://frontend.example"]
+    assert settings.database_url == "postgresql+psycopg://user:pass@db:5432/watermonitor"
 
 
-def test_allowed_origins_supports_comma_separated_deployment_origins() -> None:
-    settings = Settings(
-        frontend_origin="https://frontend.example",
-        cors_allow_origins="https://one.example, https://two.example",
-    )
+def test_database_url_uses_installed_psycopg_driver_for_postgres_url() -> None:
+    settings = Settings(database_url="postgres://user:pass@db:5432/watermonitor")
 
-    assert settings.allowed_origins == ["https://one.example", "https://two.example"]
+    assert settings.database_url == "postgresql+psycopg://user:pass@db:5432/watermonitor"
+
+
+def test_database_url_preserves_explicit_driver() -> None:
+    settings = Settings(database_url="postgresql+psycopg://user:pass@db:5432/watermonitor")
+
+    assert settings.database_url == "postgresql+psycopg://user:pass@db:5432/watermonitor"

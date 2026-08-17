@@ -5,7 +5,7 @@ from datetime import date, datetime
 from statistics import mean, median
 
 from geoalchemy2 import WKTElement
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -50,6 +50,13 @@ class WaterRepository:
         return self._db.scalar(
             select(StationRecord.id).where(StationRecord.external_id == external_id)
         )
+
+    def delete_stations_not_in(self, active_external_ids: set[str]) -> int:
+        statement = delete(StationRecord)
+        if active_external_ids:
+            statement = statement.where(StationRecord.external_id.not_in(active_external_ids))
+        result = self._db.execute(statement)
+        return result.rowcount or 0
 
     def upsert_measurements(self, station_record_id: int, measurements: list[Measurement]) -> int:
         if not measurements:

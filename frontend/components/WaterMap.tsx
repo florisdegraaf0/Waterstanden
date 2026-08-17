@@ -115,16 +115,14 @@ export function WaterMap() {
       ]);
       setSelectedStation(station);
       setMeasurements(stationMeasurements);
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unknown error";
-      setMeasurementsError(`Recent measurements are temporarily unavailable. ${detail}`);
+      fetchSeasonalContext(station)
+        .then(setSeasonalContext)
+        .catch(() => setSeasonalContext(null));
+    } catch {
+      setMeasurementsError("Recent measurements are temporarily unavailable.");
     } finally {
       setMeasurementsLoading(false);
     }
-
-    fetchSeasonalContext(stationId)
-      .then(setSeasonalContext)
-      .catch(() => setSeasonalContext(null));
   }
 
   return (

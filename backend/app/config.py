@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field, computed_field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,17 +20,22 @@ class Settings(BaseSettings):
     rws_timeout_seconds: float = 20.0
     rws_wfs_max_features: int = 1000
     rws_use_fallback_measurements: bool = True
+    active_station_max_age_hours: int = 24
+    active_station_recent_check_concurrency: int = 10
     seasonal_window_days: int = 14
     seasonal_min_sample_size: int = 150
     seasonal_min_years: int = 10
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
-    @computed_field
-    @property
-    def allowed_origins(self) -> list[str]:
-        value = self.cors_allow_origins or self.frontend_origin
-        return [origin.strip() for origin in value.split(",") if origin.strip()]
+    @field_validator("database_url")
+    @classmethod
+    def use_installed_postgres_driver(cls, value: str) -> str:
+        if value.startswith("postgresql://"):
+            return value.replace("postgresql://", "postgresql+psycopg://", 1)
+        if value.startswith("postgres://"):
+            return value.replace("postgres://", "postgresql+psycopg://", 1)
+        return value
 
 
 @lru_cache

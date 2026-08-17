@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -14,19 +15,22 @@ class WaterService:
         self,
         rws_client: RwsClient,
         use_fallback_measurements: bool = True,
-        active_station_max_age: timedelta = timedelta(hours=24),
+        active_station_max_age_hours: int = 24,
+        active_station_recent_check_concurrency: int = 10,
         now: datetime | None = None,
     ) -> None:
         self._rws_client = rws_client
         self._use_fallback_measurements = use_fallback_measurements
-        self._active_station_max_age = active_station_max_age
+        self._active_station_max_age = timedelta(hours=active_station_max_age_hours)
+        self._active_station_recent_check_concurrency = active_station_recent_check_concurrency
         self._now = now
 
     async def list_stations(self) -> list[Station]:
         observations = await self._rws_client.fetch_latest_water_level_locations()
-        stations: list[Station] = []
+        candidates: list[Station] = []
         seen: set[str] = set()
         now = self._now or datetime.now(UTC)
+        cutoff = now - self._active_station_max_age
 
         for observation in observations:
             if observation.code in seen:
@@ -34,11 +38,11 @@ class WaterService:
             latest = normalize_latest_water_level(observation)
             if latest is None:
                 continue
-            if latest.measured_at < now - self._active_station_max_age:
+            if latest.measured_at < cutoff:
                 continue
 
             seen.add(observation.code)
-            stations.append(
+            candidates.append(
                 Station(
                     id=observation.code,
                     name=observation.name,
@@ -54,6 +58,7 @@ class WaterService:
                 )
             )
 
+        stations = await self._filter_stations_with_recent_measurements(candidates, cutoff)
         return sorted(stations, key=lambda station: station.name.lower())
 
     async def get_station(self, station_id: str) -> Station:
@@ -75,6 +80,31 @@ class WaterService:
             measurements = _fallback_measurements(hours)
 
         return measurements
+
+    async def _filter_stations_with_recent_measurements(
+        self,
+        stations: list[Station],
+        cutoff: datetime,
+    ) -> list[Station]:
+        semaphore = asyncio.Semaphore(self._active_station_recent_check_concurrency)
+
+        async def is_active(station: Station) -> bool:
+            async with semaphore:
+                try:
+                    measurements = await self._rws_client.fetch_recent_measurements(
+                        station.id,
+                        int(self._active_station_max_age.total_seconds() // 3600),
+                    )
+                except ExternalServiceError:
+                    logger.info(
+                        "Skipping station without recent RWS measurements",
+                        extra={"station_id": station.id},
+                    )
+                    return False
+                return any(measurement.measured_at >= cutoff for measurement in measurements)
+
+        checks = await asyncio.gather(*(is_active(station) for station in stations))
+        return [station for station, active in zip(stations, checks, strict=True) if active]
 
 
 def _fallback_measurements(hours: int) -> list[Measurement]:
