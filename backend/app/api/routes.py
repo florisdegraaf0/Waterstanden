@@ -7,20 +7,26 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_app_settings, get_db, get_rws_client
 from app.clients.rws.client import RwsClient
 from app.config import Settings
+from app.domain.anomaly import AnomalyConfig
 from app.domain.curated_stations import CURATED_STATION_IDS
 from app.domain.seasonal import SeasonalConfig
 from app.exceptions import StationNotFound
 from app.repositories.water import WaterRepository
 from app.schemas.stations import (
+    AnomalyDataQualityPayload,
+    AnomalyResultPayload,
+    AnomalySignalPayload,
     CurrentMeasurement,
     MeasurementPoint,
     SeasonalContextPayload,
     SeasonalReferencePeriod,
     SeasonalReferenceValues,
+    StationAnomalyPayload,
     StationDetail,
     StationSeasonalContext,
     StationSummary,
 )
+from app.services.anomaly import AnomalyService
 from app.services.seasonal import SeasonalContextService
 from app.services.water import WaterService
 
@@ -140,4 +146,84 @@ async def get_seasonal_context(
                 else None
             ),
         ),
+    )
+
+
+@router.get("/stations/{station_id}/anomaly", response_model=StationAnomalyPayload)
+async def get_station_anomaly(
+    station_id: str,
+    rws_client: Annotated[RwsClient, Depends(get_rws_client)],
+    settings: Annotated[Settings, Depends(get_app_settings)],
+    db: Annotated[Session, Depends(get_db)],
+    parameter: str = "water_level",
+):
+    if station_id not in CURATED_STATION_IDS:
+        raise StationNotFound(f"Station {station_id!r} was not found")
+
+    repository = WaterRepository(db)
+    seasonal_config = SeasonalConfig(
+        window_days=settings.seasonal_window_days,
+        min_sample_size=settings.seasonal_min_sample_size,
+        min_years=settings.seasonal_min_years,
+    )
+    result = await AnomalyService(
+        water_service=WaterService(
+            rws_client,
+            use_fallback_measurements=False,
+            active_station_max_age_hours=settings.active_station_max_age_hours,
+            active_station_recent_check_concurrency=(
+                settings.active_station_recent_check_concurrency
+            ),
+            active_station_verify_recent_measurements=(
+                settings.active_station_verify_recent_measurements
+            ),
+        ),
+        seasonal_service=SeasonalContextService(repository, seasonal_config),
+        repository=repository,
+        anomaly_config=AnomalyConfig(
+            seasonal_window_days=settings.seasonal_window_days,
+            delta_tolerance_minutes=settings.anomaly_delta_tolerance_minutes,
+            recent_window_hours=settings.anomaly_recent_window_hours,
+            stale_after_minutes=settings.anomaly_stale_after_minutes,
+        ),
+    ).get_station_anomaly(station_id, parameter)
+
+    return StationAnomalyPayload(
+        station_id=result.station_id,
+        parameter=result.parameter,
+        evaluated_at=result.evaluated_at,
+        current=CurrentMeasurement(
+            value=result.current.value,
+            unit=result.current.unit,
+            measured_at=result.current.measured_at,
+        ),
+        anomaly=AnomalyResultPayload(
+            status=result.anomaly.status,
+            score=result.anomaly.score,
+            severity=result.anomaly.severity,
+            is_anomalous=result.anomaly.is_anomalous,
+            confidence=result.anomaly.confidence,
+            signals=[_anomaly_signal_payload(signal) for signal in result.anomaly.signals],
+        ),
+        data_quality=AnomalyDataQualityPayload(
+            status=result.data_quality.status,
+            signals=[_anomaly_signal_payload(signal) for signal in result.data_quality.signals],
+            historical_years=result.data_quality.historical_years,
+            historical_sample_size=result.data_quality.historical_sample_size,
+            recent_measurement_count=result.data_quality.recent_measurement_count,
+            largest_recent_gap_minutes=result.data_quality.largest_recent_gap_minutes,
+        ),
+    )
+
+
+def _anomaly_signal_payload(signal) -> AnomalySignalPayload:
+    return AnomalySignalPayload(
+        type=signal.type,
+        category=signal.category,
+        score=signal.score,
+        direction=signal.direction,
+        value=signal.value,
+        unit=signal.unit,
+        percentile=signal.percentile,
+        message=signal.message,
     )

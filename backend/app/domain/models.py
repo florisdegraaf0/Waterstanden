@@ -41,6 +41,14 @@ class DailyStatistic:
 
 
 @dataclass(frozen=True)
+class HistoricalChangeStatistic:
+    date: date
+    window_hours: int
+    delta_value: float
+    observation_count: int
+
+
+@dataclass(frozen=True)
 class ReferencePeriod:
     window_days: int
     first_year: int | None
@@ -64,3 +72,45 @@ class SeasonalContext:
     years_used: int
     reference_period: ReferencePeriod
     reference_values: PercentileReferenceValues | None
+
+
+@dataclass(frozen=True)
+class AnomalySignal:
+    type: str
+    category: str
+    score: int | None
+    direction: str | None
+    value: float | None
+    unit: str | None
+    percentile: float | None
+    message: str
+
+
+@dataclass(frozen=True)
+class AnomalyDataQuality:
+    status: str
+    signals: list[AnomalySignal]
+    historical_years: int
+    historical_sample_size: int
+    recent_measurement_count: int
+    largest_recent_gap_minutes: float | None
+
+
+@dataclass(frozen=True)
+class AnomalyResult:
+    status: str
+    score: int | None
+    severity: str
+    is_anomalous: bool
+    confidence: str
+    signals: list[AnomalySignal]
+
+
+@dataclass(frozen=True)
+class StationAnomaly:
+    station_id: str
+    parameter: str
+    evaluated_at: datetime
+    current: Measurement
+    anomaly: AnomalyResult
+    data_quality: AnomalyDataQuality

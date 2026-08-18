@@ -70,6 +70,7 @@ npm run build
 - `GET /api/stations/{station_id}`
 - `GET /api/stations/{station_id}/measurements?hours=48`
 - `GET /api/stations/{station_id}/seasonal-context?parameter=water_level`
+- `GET /api/stations/{station_id}/anomaly?parameter=water_level`
 
 The frontend receives normalized application models only. Rijkswaterstaat-specific response fields stay inside the backend client/service layer.
 
@@ -108,3 +109,41 @@ uv run python -m app.jobs.sync_active_stations --active-max-age-hours 24
 - Source values in centimeters are normalized to meters for app responses.
 - DDAPI20 WFS coordinates were observed as `POINT (latitude longitude)` and are mapped to app fields as `latitude` and `longitude`.
 - Historical percentile context is read from persisted backfill data and daily aggregates. Live station lists and current values still come directly from Rijkswaterstaat.
+
+## Anomaly Detection
+
+The first anomaly-detection slice is statistical and explainable. For a selected
+station, the backend compares the current water level and 24-hour change with
+station-specific seasonal historical references.
+
+The anomaly score is unusualness, not danger or flood probability:
+
+```text
+component_score = abs(percentile - 50) * 2
+overall_score = 0.55 * seasonal_level_score + 0.45 * 24h_change_score
+```
+
+Both high and low extremes are treated symmetrically. A 99th percentile and a
+1st percentile both produce a strong component score.
+
+Historical 24-hour change references are stored as one derived daily value per
+station, parameter, date, and window. The value is calculated from daily means:
+
+```text
+24h delta for day D = daily_mean(D) - daily_mean(D - 1)
+```
+
+This avoids giving extra statistical weight to stations or periods with more
+frequent observations. The same ±14 day seasonal window used for seasonal
+percentiles is used for 24-hour change comparisons.
+
+The backend returns structured explanatory signals, severity, confidence, and
+data-quality metadata through:
+
+```text
+GET /api/stations/{station_id}/anomaly
+```
+
+If recent data looks unreliable, for example stale measurements, fallback values,
+duplicate timestamps, flatlining, or an isolated spike, the response marks this
+as a data-quality anomaly and suppresses hydrological scoring.

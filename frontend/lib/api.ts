@@ -59,6 +59,44 @@ export type SeasonalContext = {
   };
 };
 
+export type AnomalySignal = {
+  type: string;
+  category: "hydrological" | "data_quality";
+  score: number | null;
+  direction: string | null;
+  value: number | null;
+  unit: string | null;
+  percentile: number | null;
+  message: string;
+};
+
+export type StationAnomaly = {
+  station_id: string;
+  parameter: string;
+  evaluated_at: string;
+  current: {
+    value: number | null;
+    unit: string | null;
+    measured_at: string | null;
+  };
+  anomaly: {
+    status: "ok" | "insufficient_data" | "data_quality_anomaly" | "historical_data_unavailable";
+    score: number | null;
+    severity: "normal" | "low" | "moderate" | "high" | "extreme";
+    is_anomalous: boolean;
+    confidence: "low" | "medium" | "high";
+    signals: AnomalySignal[];
+  };
+  data_quality: {
+    status: "normal" | "degraded" | "data_quality_anomaly";
+    signals: AnomalySignal[];
+    historical_years: number;
+    historical_sample_size: number;
+    recent_measurement_count: number;
+    largest_recent_gap_minutes: number | null;
+  };
+};
+
 async function fetchJson<T>(path: string): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
   let response: Response;
@@ -114,5 +152,12 @@ export function fetchSeasonalContext(station: Station): Promise<SeasonalContext>
   }
   return fetchJson<SeasonalContext>(
     `/api/stations/${encodeURIComponent(station.id)}/seasonal-context?${params}`
+  );
+}
+
+export function fetchStationAnomaly(station: Station): Promise<StationAnomaly> {
+  const params = new URLSearchParams({ parameter: "water_level" });
+  return fetchJson<StationAnomaly>(
+    `/api/stations/${encodeURIComponent(station.id)}/anomaly?${params}`
   );
 }

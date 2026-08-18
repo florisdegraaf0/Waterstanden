@@ -7,10 +7,12 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import {
   fetchMeasurements,
   fetchSeasonalContext,
+  fetchStationAnomaly,
   fetchStation,
   fetchStations,
   type MeasurementPoint,
   type SeasonalContext,
+  type StationAnomaly,
   type Station
 } from "@/lib/api";
 import { StationPanel } from "@/components/StationPanel";
@@ -24,6 +26,7 @@ export function WaterMap() {
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [measurements, setMeasurements] = useState<MeasurementPoint[]>([]);
   const [seasonalContext, setSeasonalContext] = useState<SeasonalContext | null>(null);
+  const [anomaly, setAnomaly] = useState<StationAnomaly | null>(null);
   const [stationsLoading, setStationsLoading] = useState(true);
   const [stationsError, setStationsError] = useState<string | null>(null);
   const [measurementsLoading, setMeasurementsLoading] = useState(false);
@@ -105,6 +108,7 @@ export function WaterMap() {
     setSelectedStation(baseStation);
     setMeasurements([]);
     setSeasonalContext(null);
+    setAnomaly(null);
     setMeasurementsError(null);
     setMeasurementsLoading(true);
 
@@ -118,6 +122,9 @@ export function WaterMap() {
       fetchSeasonalContext(station)
         .then(setSeasonalContext)
         .catch(() => setSeasonalContext(null));
+      fetchStationAnomaly(station)
+        .then(setAnomaly)
+        .catch(() => setAnomaly(null));
     } catch {
       setMeasurementsError("Recent measurements are temporarily unavailable.");
     } finally {
@@ -155,6 +162,7 @@ export function WaterMap() {
         station={selectedStation}
         measurements={measurements}
         seasonalContext={seasonalContext}
+        anomaly={anomaly}
         loading={measurementsLoading}
         error={measurementsError}
         onClose={() => setSelectedStation(null)}

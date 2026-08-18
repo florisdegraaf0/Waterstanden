@@ -10,7 +10,7 @@ from statistics import mean, median
 from app.clients.rws.client import RwsClient
 from app.config import get_settings
 from app.domain.curated_stations import CURATED_STATIONS
-from app.domain.models import DailyStatistic, Measurement, Station
+from app.domain.models import DailyStatistic, HistoricalChangeStatistic, Measurement, Station
 from app.services.water import WaterService
 
 logger = logging.getLogger(__name__)
@@ -62,6 +62,14 @@ async def run_backfill(
                     parameter=parameter,
                     daily_statistics=daily_statistics,
                 )
+                change_count = repository.upsert_historical_change_statistics(
+                    station_record_id=station_record_id,
+                    parameter=parameter,
+                    change_statistics=_daily_change_statistics_from_daily_statistics(
+                        daily_statistics,
+                        window_hours=24,
+                    ),
+                )
                 db.commit()
                 logger.info(
                     "Stored historical RWS measurements",
@@ -69,6 +77,7 @@ async def run_backfill(
                         "station_id": station_id,
                         "measurements_seen": len(measurements),
                         "daily_statistics": daily_count,
+                        "change_statistics": change_count,
                     },
                 )
     finally:
@@ -138,6 +147,31 @@ def _daily_statistics_from_measurements(measurements: list[Measurement]) -> list
             )
         )
     return daily_statistics
+
+
+def _daily_change_statistics_from_daily_statistics(
+    daily_statistics: list[DailyStatistic],
+    *,
+    window_hours: int,
+) -> list[HistoricalChangeStatistic]:
+    if window_hours != 24:
+        raise ValueError("Only 24 hour daily change statistics are supported")
+
+    by_date = {statistic.date: statistic for statistic in daily_statistics}
+    changes: list[HistoricalChangeStatistic] = []
+    for statistic in sorted(daily_statistics, key=lambda value: value.date):
+        previous = by_date.get(statistic.date - timedelta(days=1))
+        if previous is None:
+            continue
+        changes.append(
+            HistoricalChangeStatistic(
+                date=statistic.date,
+                window_hours=window_hours,
+                delta_value=statistic.mean_value - previous.mean_value,
+                observation_count=statistic.observation_count + previous.observation_count,
+            )
+        )
+    return changes
 
 
 def _parse_args() -> argparse.Namespace:

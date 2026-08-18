@@ -62,3 +62,41 @@ class StationSeasonalContext(BaseModel):
     parameter: str
     current: CurrentMeasurement
     seasonal_context: SeasonalContextPayload
+
+
+class AnomalySignalPayload(BaseModel):
+    type: str
+    category: str
+    score: int | None = None
+    direction: str | None = None
+    value: float | None = None
+    unit: str | None = None
+    percentile: float | None = None
+    message: str
+
+
+class AnomalyResultPayload(BaseModel):
+    status: str
+    score: int | None = None
+    severity: str
+    is_anomalous: bool
+    confidence: str
+    signals: list[AnomalySignalPayload]
+
+
+class AnomalyDataQualityPayload(BaseModel):
+    status: str
+    signals: list[AnomalySignalPayload]
+    historical_years: int
+    historical_sample_size: int
+    recent_measurement_count: int
+    largest_recent_gap_minutes: float | None = None
+
+
+class StationAnomalyPayload(BaseModel):
+    station_id: str
+    parameter: str
+    evaluated_at: datetime
+    current: CurrentMeasurement
+    anomaly: AnomalyResultPayload
+    data_quality: AnomalyDataQualityPayload

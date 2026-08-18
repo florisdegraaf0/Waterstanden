@@ -12,9 +12,10 @@ from sqlalchemy.orm import Session
 from app.db.base import (
     MeasurementRecord,
     StationDailyStatisticRecord,
+    StationHistoricalChangeStatisticRecord,
     StationRecord,
 )
-from app.domain.models import DailyStatistic, Measurement, Station
+from app.domain.models import DailyStatistic, HistoricalChangeStatistic, Measurement, Station
 
 _MEASUREMENT_UPSERT_BATCH_SIZE = 100
 
@@ -187,6 +188,44 @@ class WaterRepository:
             affected += result.rowcount or 0
         return affected
 
+    def upsert_historical_change_statistics(
+        self,
+        *,
+        station_record_id: int,
+        parameter: str,
+        change_statistics: list[HistoricalChangeStatistic],
+    ) -> int:
+        affected = 0
+        for statistic in change_statistics:
+            statement = (
+                insert(StationHistoricalChangeStatisticRecord)
+                .values(
+                    station_id=station_record_id,
+                    date=statistic.date,
+                    parameter=parameter,
+                    window_hours=statistic.window_hours,
+                    delta_value=statistic.delta_value,
+                    observation_count=statistic.observation_count,
+                    source_metadata={
+                        "source": "historical_backfill_daily_mean_delta",
+                    },
+                )
+                .on_conflict_do_update(
+                    constraint="uq_station_historical_change_statistics_series_date",
+                    set_={
+                        "delta_value": statistic.delta_value,
+                        "observation_count": statistic.observation_count,
+                        "source_metadata": {
+                            "source": "historical_backfill_daily_mean_delta",
+                        },
+                        "updated_at": datetime.now().astimezone(),
+                    },
+                )
+            )
+            result = self._db.execute(statement)
+            affected += result.rowcount or 0
+        return affected
+
     def list_daily_statistics(
         self,
         station_external_id: str,
@@ -210,6 +249,33 @@ class WaterRepository:
                 max_value=row.max_value,
                 mean_value=row.mean_value,
                 median_value=row.median_value,
+                observation_count=row.observation_count,
+            )
+            for row in rows
+        ]
+
+    def list_historical_change_statistics(
+        self,
+        station_external_id: str,
+        parameter: str,
+        window_hours: int,
+    ) -> list[HistoricalChangeStatistic]:
+        station_record_id = self.get_station_record_id(station_external_id)
+        if station_record_id is None:
+            return []
+
+        rows = self._db.scalars(
+            select(StationHistoricalChangeStatisticRecord)
+            .where(StationHistoricalChangeStatisticRecord.station_id == station_record_id)
+            .where(StationHistoricalChangeStatisticRecord.parameter == parameter)
+            .where(StationHistoricalChangeStatisticRecord.window_hours == window_hours)
+            .order_by(StationHistoricalChangeStatisticRecord.date)
+        ).all()
+        return [
+            HistoricalChangeStatistic(
+                date=row.date,
+                window_hours=row.window_hours,
+                delta_value=row.delta_value,
                 observation_count=row.observation_count,
             )
             for row in rows

@@ -105,3 +105,39 @@ class StationDailyStatisticRecord(Base):
         onupdate=lambda: datetime.now(UTC),
         server_default=func.now(),
     )
+
+
+class StationHistoricalChangeStatisticRecord(Base):
+    __tablename__ = "station_historical_change_statistics"
+    __table_args__ = (
+        UniqueConstraint(
+            "station_id",
+            "parameter",
+            "date",
+            "window_hours",
+            name="uq_station_historical_change_statistics_series_date",
+        ),
+        Index(
+            "ix_station_historical_change_statistics_station_date",
+            "station_id",
+            "date",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    station_id: Mapped[int] = mapped_column(ForeignKey("stations.id", ondelete="CASCADE"))
+    date: Mapped[date] = mapped_column(Date)
+    parameter: Mapped[str]
+    window_hours: Mapped[int]
+    delta_value: Mapped[float]
+    observation_count: Mapped[int]
+    source_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        server_default=func.now(),
+    )

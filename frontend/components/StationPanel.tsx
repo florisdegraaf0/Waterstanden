@@ -2,13 +2,20 @@
 
 import { AlertCircle, Info, Loader2, X } from "lucide-react";
 
-import type { MeasurementPoint, SeasonalContext, SeasonalStatus, Station } from "@/lib/api";
+import type {
+  MeasurementPoint,
+  SeasonalContext,
+  SeasonalStatus,
+  Station,
+  StationAnomaly
+} from "@/lib/api";
 import { WaterLevelChart } from "@/components/WaterLevelChart";
 
 type Props = {
   station: Station | null;
   measurements: MeasurementPoint[];
   seasonalContext: SeasonalContext | null;
+  anomaly: StationAnomaly | null;
   loading: boolean;
   error: string | null;
   onClose: () => void;
@@ -18,6 +25,7 @@ export function StationPanel({
   station,
   measurements,
   seasonalContext,
+  anomaly,
   loading,
   error,
   onClose
@@ -83,6 +91,7 @@ export function StationPanel({
         </dl>
 
         <SeasonalSection context={seasonalContext} unit={station.unit} />
+        <AnomalySection anomaly={anomaly} />
 
         <section>
           <div className="mb-3 flex items-center justify-between">
@@ -105,6 +114,109 @@ export function StationPanel({
       </div>
     </aside>
   );
+}
+
+function AnomalySection({ anomaly }: { anomaly: StationAnomaly | null }) {
+  if (!anomaly) {
+    return (
+      <section className="border-b border-slate-200 pb-4">
+        <div className="text-sm font-semibold text-ink">Anomaly score</div>
+        <div className="mt-2 text-sm text-slate-500">Anomaly detection is loading.</div>
+      </section>
+    );
+  }
+
+  if (anomaly.anomaly.status === "data_quality_anomaly") {
+    const signals = anomaly.data_quality.signals.slice(0, 3);
+    return (
+      <section className="border-b border-slate-200 pb-4">
+        <div className="text-sm font-semibold text-ink">Anomaly score</div>
+        <div className="mt-2 text-sm font-medium text-amber-700">Sensor data needs review.</div>
+        <SignalList signals={signals} />
+      </section>
+    );
+  }
+
+  if (anomaly.anomaly.status === "insufficient_data") {
+    return (
+      <section className="border-b border-slate-200 pb-4">
+        <div className="text-sm font-semibold text-ink">Anomaly score</div>
+        <div className="mt-2 text-sm font-medium text-amber-700">
+          Not enough historical reference data.
+        </div>
+        <div className="mt-1 text-xs text-slate-500">
+          {anomaly.data_quality.historical_sample_size} reference values across{" "}
+          {anomaly.data_quality.historical_years} years.
+        </div>
+      </section>
+    );
+  }
+
+  const score = anomaly.anomaly.score;
+  const topSignals = anomaly.anomaly.signals
+    .filter((signal) => signal.category === "hydrological")
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    .slice(0, 3);
+
+  return (
+    <section className="border-b border-slate-200 pb-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-sm font-semibold text-ink">Anomaly score</div>
+          <div className="mt-2 text-3xl font-semibold text-ink">
+            {score == null ? "n/a" : `${score} / 100`}
+          </div>
+          <div className="mt-1 text-sm text-slate-600">
+            {severityLabel(anomaly.anomaly.severity)}
+            {anomaly.anomaly.confidence !== "high"
+              ? ` - ${confidenceLabel(anomaly.anomaly.confidence)} confidence`
+              : ""}
+          </div>
+        </div>
+        <div className="text-right text-xs text-slate-500">
+          {anomaly.data_quality.historical_years} years
+          <br />
+          {anomaly.data_quality.historical_sample_size} samples
+        </div>
+      </div>
+      <SignalList signals={topSignals} />
+    </section>
+  );
+}
+
+function SignalList({ signals }: { signals: StationAnomaly["anomaly"]["signals"] }) {
+  if (signals.length === 0) {
+    return null;
+  }
+  return (
+    <div className="mt-3 space-y-2">
+      {signals.map((signal) => (
+        <div key={`${signal.type}-${signal.message}`} className="text-sm text-slate-600">
+          {signal.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function severityLabel(severity: StationAnomaly["anomaly"]["severity"]) {
+  const labels: Record<StationAnomaly["anomaly"]["severity"], string> = {
+    normal: "Normal",
+    low: "Low anomaly",
+    moderate: "Moderate anomaly",
+    high: "High anomaly",
+    extreme: "Extreme anomaly"
+  };
+  return labels[severity];
+}
+
+function confidenceLabel(confidence: StationAnomaly["anomaly"]["confidence"]) {
+  const labels: Record<StationAnomaly["anomaly"]["confidence"], string> = {
+    low: "Low",
+    medium: "Medium",
+    high: "High"
+  };
+  return labels[confidence];
 }
 
 function SeasonalSection({ context, unit }: { context: SeasonalContext | null; unit: string | null }) {

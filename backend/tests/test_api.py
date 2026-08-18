@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -319,3 +319,156 @@ async def test_seasonal_context_endpoint_handles_missing_historical_tables(
 
     assert response.status_code == 200
     assert response.json()["seasonal_context"]["status"] == "historical_data_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_anomaly_endpoint_returns_explainable_score(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class AnomalyRwsClient(FakeRwsClient):
+        async def fetch_recent_measurements(
+            self,
+            station_code: str,
+            hours: int,
+        ) -> list[Measurement]:
+            assert station_code == LOBITH_ID
+            assert hours == 48
+            return [
+                Measurement(
+                    measured_at=RECENT_MEASURED_AT - timedelta(hours=1),
+                    value=9.0,
+                    unit="m NAP",
+                    parameter="water_level",
+                    quality_code="00",
+                ),
+                Measurement(
+                    measured_at=RECENT_MEASURED_AT,
+                    value=9.37,
+                    unit="m NAP",
+                    parameter="water_level",
+                    quality_code="00",
+                ),
+                Measurement(
+                    measured_at=RECENT_MEASURED_AT - timedelta(hours=24),
+                    value=8.74,
+                    unit="m NAP",
+                    parameter="water_level",
+                    quality_code="00",
+                ),
+            ]
+
+    async def anomaly_rws_client():
+        yield AnomalyRwsClient()
+
+    class FakeRepository:
+        def __init__(self, _db: object) -> None:
+            pass
+
+        def list_daily_statistics(self, station_external_id: str, parameter: str):
+            assert station_external_id == LOBITH_ID
+            assert parameter == "water_level"
+            return [
+                DailyStatistic(
+                    date=datetime(year, RECENT_MEASURED_AT.month, RECENT_MEASURED_AT.day).date(),
+                    value=5.0 + index * 0.01,
+                    min_value=5.0,
+                    max_value=6.0,
+                    mean_value=5.5,
+                    median_value=5.5,
+                    observation_count=24,
+                )
+                for year in range(2010, 2025)
+                for index in range(10)
+            ]
+
+        def list_historical_change_statistics(
+            self,
+            station_external_id: str,
+            parameter: str,
+            window_hours: int,
+        ):
+            from app.domain.models import HistoricalChangeStatistic
+
+            assert station_external_id == LOBITH_ID
+            assert parameter == "water_level"
+            assert window_hours == 24
+            return [
+                HistoricalChangeStatistic(
+                    date=datetime(year, RECENT_MEASURED_AT.month, RECENT_MEASURED_AT.day).date(),
+                    window_hours=24,
+                    delta_value=0.01,
+                    observation_count=48,
+                )
+                for year in range(2010, 2025)
+                for _index in range(4)
+            ]
+
+    monkeypatch.setattr(routes, "WaterRepository", FakeRepository)
+    app.dependency_overrides[get_rws_client] = anomaly_rws_client
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(f"/api/stations/{LOBITH_ID}/anomaly")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["anomaly"]["status"] == "ok"
+    assert payload["anomaly"]["score"] >= 90
+    assert {signal["type"] for signal in payload["anomaly"]["signals"]} == {
+        "seasonal_level",
+        "rate_of_change_24h",
+    }
+
+
+@pytest.mark.asyncio
+async def test_anomaly_endpoint_suppresses_hydrology_for_fallback_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FallbackRwsClient(FakeRwsClient):
+        async def fetch_recent_measurements(
+            self,
+            station_code: str,
+            hours: int,
+        ) -> list[Measurement]:
+            return [
+                Measurement(
+                    measured_at=RECENT_MEASURED_AT,
+                    value=9.37,
+                    unit="m NAP",
+                    parameter="water_level",
+                    quality_code="fallback",
+                )
+            ]
+
+    async def fallback_rws_client():
+        yield FallbackRwsClient()
+
+    class FakeRepository:
+        def __init__(self, _db: object) -> None:
+            pass
+
+        def list_daily_statistics(self, station_external_id: str, parameter: str):
+            return []
+
+        def list_historical_change_statistics(
+            self,
+            station_external_id: str,
+            parameter: str,
+            window_hours: int,
+        ):
+            return []
+
+    monkeypatch.setattr(routes, "WaterRepository", FakeRepository)
+    app.dependency_overrides[get_rws_client] = fallback_rws_client
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(f"/api/stations/{LOBITH_ID}/anomaly")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["anomaly"]["status"] == "data_quality_anomaly"
+    assert payload["anomaly"]["score"] is None
+    assert payload["data_quality"]["signals"][0]["type"] == "fallback_measurements"

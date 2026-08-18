@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     seasonal_window_days: int = 14
     seasonal_min_sample_size: int = 150
     seasonal_min_years: int = 10
+    anomaly_delta_tolerance_minutes: int = 45
+    anomaly_recent_window_hours: int = 48
+    anomaly_stale_after_minutes: int = 180
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

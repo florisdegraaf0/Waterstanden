@@ -36,7 +36,7 @@ def calculate_seasonal_context(
         value
         for value in historical_daily_values
         if value.date.year != current_date.year
-        and _is_within_seasonal_window(value.date, current_date, config.window_days)
+        and is_within_seasonal_window(value.date, current_date, config.window_days)
     ]
     reference_values = [value.value for value in reference]
     years = sorted({value.date.year for value in reference})
@@ -56,7 +56,7 @@ def calculate_seasonal_context(
             reference_values=None,
         )
 
-    percentile = _midrank_percentile(current_value, reference_values)
+    percentile = midrank_percentile(current_value, reference_values)
     return SeasonalContext(
         status=_status_for_percentile(percentile),
         percentile=percentile,
@@ -73,7 +73,7 @@ def calculate_seasonal_context(
     )
 
 
-def _midrank_percentile(value: float, sample: list[float]) -> float:
+def midrank_percentile(value: float, sample: list[float]) -> float:
     less = sum(1 for item in sample if item < value)
     equal = sum(1 for item in sample if item == value)
     return 100 * (less + 0.5 * equal) / len(sample)
@@ -102,7 +102,7 @@ def _quantile(values: list[float], probability: float) -> float:
     return ordered[lower_index] + (ordered[upper_index] - ordered[lower_index]) * fraction
 
 
-def _is_within_seasonal_window(candidate: date, target: date, window_days: int) -> bool:
+def is_within_seasonal_window(candidate: date, target: date, window_days: int) -> bool:
     candidate_day = _seasonal_day(candidate)
     target_day = _seasonal_day(target)
     distance = abs(candidate_day - target_day)
