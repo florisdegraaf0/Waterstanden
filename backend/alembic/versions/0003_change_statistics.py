@@ -1,6 +1,6 @@
 """Add historical change statistics.
 
-Revision ID: 0003_historical_change_statistics
+Revision ID: 0003_change_statistics
 Revises: 0002_historical_daily_statistics
 Create Date: 2026-08-18
 """
@@ -12,7 +12,7 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision: str = "0003_historical_change_statistics"
+revision: str = "0003_change_statistics"
 down_revision: str | None = "0002_historical_daily_statistics"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
