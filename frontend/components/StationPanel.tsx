@@ -316,12 +316,13 @@ function SeasonalContextTitle() {
   return (
     <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
       <span>Seasonal context</span>
-      <Info
-        aria-label="Seasonal percentile uses the 24 hour average water level."
-        className="text-slate-400"
-        size={14}
-        title="Seasonal percentile uses the 24 hour average water level."
-      />
+      <span title="Seasonal percentile uses the 24 hour average water level.">
+        <Info
+          aria-label="Seasonal percentile uses the 24 hour average water level."
+          className="text-slate-400"
+          size={14}
+        />
+      </span>
     </div>
   );
 }
