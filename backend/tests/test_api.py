@@ -12,6 +12,7 @@ from app.main import app
 
 RECENT_MEASURED_AT = datetime.now(UTC).replace(microsecond=0)
 LOBITH_ID = "lobith.bovenrijn.tolkamer"
+VLISSINGEN_ID = "vlissingen"
 
 
 class FakeRwsClient:
@@ -39,8 +40,19 @@ class FakeRwsClient:
         ]
 
     async def fetch_recent_measurements(self, station_code: str, hours: int) -> list[Measurement]:
-        assert station_code == LOBITH_ID
+        assert station_code in {LOBITH_ID, VLISSINGEN_ID}
         assert hours in {24, 48}
+        if station_code == VLISSINGEN_ID:
+            return [
+                Measurement(
+                    measured_at=RECENT_MEASURED_AT,
+                    value=value,
+                    unit="m NAP",
+                    parameter="water_level",
+                    quality_code="00",
+                )
+                for value in (-1.0, 0.0, 1.0)
+            ]
         return [
             Measurement(
                 measured_at=RECENT_MEASURED_AT,
@@ -158,6 +170,51 @@ async def test_seasonal_context_endpoint_returns_percentile(
     assert payload["seasonal_context"]["status"] == "extremely_high"
     assert payload["seasonal_context"]["sample_size"] == 150
     assert payload["seasonal_context"]["reference_values"]["p50"] > 0
+
+
+@pytest.mark.asyncio
+async def test_tidal_seasonal_context_compares_daily_mean(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeRepository:
+        def __init__(self, _db: object) -> None:
+            pass
+
+        def list_daily_statistics(self, station_external_id: str, parameter: str):
+            assert station_external_id == VLISSINGEN_ID
+            assert parameter == "water_level"
+            return [
+                DailyStatistic(
+                    date=datetime(year, RECENT_MEASURED_AT.month, RECENT_MEASURED_AT.day).date(),
+                    value=2.0,
+                    min_value=-1.0,
+                    max_value=2.0,
+                    mean_value=0.0,
+                    median_value=0.1,
+                    observation_count=24,
+                )
+                for year in range(2010, 2025)
+                for _index in range(10)
+            ]
+
+    monkeypatch.setattr(routes, "WaterRepository", FakeRepository)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get(
+            f"/api/stations/{VLISSINGEN_ID}/seasonal-context",
+            params={
+                "current_value": 2.0,
+                "current_unit": "m NAP",
+                "measured_at": RECENT_MEASURED_AT.isoformat(),
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["seasonal_context"]["status"] == "normal"
+    assert payload["seasonal_context"]["percentile"] == pytest.approx(50.0)
 
 
 @pytest.mark.asyncio

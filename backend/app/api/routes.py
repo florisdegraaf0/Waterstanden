@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_app_settings, get_db, get_rws_client
 from app.clients.rws.client import RwsClient
 from app.config import Settings
-from app.domain.curated_stations import CURATED_STATION_IDS
+from app.domain.curated_stations import CURATED_STATION_IDS, TIDAL_DAILY_MEAN_SEASONAL_STATION_IDS
 from app.domain.seasonal import SeasonalConfig
 from app.exceptions import StationNotFound
 from app.repositories.water import WaterRepository
@@ -78,6 +78,7 @@ async def get_measurements(
 @router.get("/stations/{station_id}/seasonal-context", response_model=StationSeasonalContext)
 async def get_seasonal_context(
     station_id: str,
+    rws_client: Annotated[RwsClient, Depends(get_rws_client)],
     settings: Annotated[Settings, Depends(get_app_settings)],
     db: Annotated[Session, Depends(get_db)],
     parameter: str = "water_level",
@@ -87,6 +88,13 @@ async def get_seasonal_context(
 ):
     if station_id not in CURATED_STATION_IDS:
         raise StationNotFound(f"Station {station_id!r} was not found")
+
+    current_measurements = None
+    if station_id in TIDAL_DAILY_MEAN_SEASONAL_STATION_IDS:
+        current_measurements = await WaterService(
+            rws_client,
+            use_fallback_measurements=False,
+        ).get_measurements(station_id, 24)
 
     context = SeasonalContextService(
         WaterRepository(db),
@@ -98,6 +106,7 @@ async def get_seasonal_context(
     ).get_context_for_current(
         station_id=station_id,
         current_value=current_value,
+        current_measurements=current_measurements,
         measured_at=measured_at,
         parameter=parameter,
     )

@@ -1,9 +1,12 @@
 import logging
+from dataclasses import replace
 from datetime import datetime
+from statistics import mean
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.domain.models import SeasonalContext, Station
+from app.domain.curated_stations import TIDAL_DAILY_MEAN_SEASONAL_STATION_IDS
+from app.domain.models import DailyStatistic, Measurement, SeasonalContext, Station
 from app.domain.seasonal import SeasonalConfig, calculate_seasonal_context
 from app.repositories.water import WaterRepository
 
@@ -43,6 +46,7 @@ class SeasonalContextService:
         station_id: str,
         current_value: float | None,
         measured_at: datetime | None,
+        current_measurements: list[Measurement] | None = None,
         parameter: str = "water_level",
     ) -> SeasonalContext:
         if current_value is None or measured_at is None:
@@ -59,10 +63,26 @@ class SeasonalContextService:
         if error is not None:
             return _historical_data_unavailable(self._config.window_days)
 
+        comparison_value = current_value
+        comparison_daily_values = daily_values
+        if station_id in TIDAL_DAILY_MEAN_SEASONAL_STATION_IDS and current_measurements is not None:
+            comparison_value = _mean_measurement_value(current_measurements, parameter)
+            comparison_daily_values = _use_daily_mean_values(daily_values)
+
+        if comparison_value is None:
+            return SeasonalContext(
+                status="insufficient_data",
+                percentile=None,
+                sample_size=0,
+                years_used=0,
+                reference_period=_empty_reference_period(self._config.window_days),
+                reference_values=None,
+            )
+
         return calculate_seasonal_context(
-            current_value=current_value,
+            current_value=comparison_value,
             current_date=measured_at.date(),
-            historical_daily_values=daily_values,
+            historical_daily_values=comparison_daily_values,
             config=self._config,
         )
 
@@ -93,3 +113,21 @@ def _historical_data_unavailable(window_days: int) -> SeasonalContext:
         reference_period=_empty_reference_period(window_days),
         reference_values=None,
     )
+
+
+def _mean_measurement_value(
+    measurements: list[Measurement],
+    parameter: str,
+) -> float | None:
+    values = [
+        measurement.value
+        for measurement in measurements
+        if measurement.parameter == parameter
+    ]
+    if not values:
+        return None
+    return mean(values)
+
+
+def _use_daily_mean_values(daily_values: list[DailyStatistic]) -> list[DailyStatistic]:
+    return [replace(value, value=value.mean_value) for value in daily_values]
