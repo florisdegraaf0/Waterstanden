@@ -90,6 +90,7 @@ class RwsClient:
                     "Compartiment": {"Code": "OW"},
                     "Grootheid": {"Code": "WATHTE"},
                     "ProcesType": "meting",
+                    "Hoedanigheid": {"Code": "NAP"},
                 },
                 "WaarnemingMetadata": {
                     "KwaliteitswaardecodeLijst": ["00", "10", "20", "25", "30", "40"]
@@ -118,7 +119,7 @@ class RwsClient:
             message = "Rijkswaterstaat recent observations are unavailable"
             raise ExternalServiceError(message) from exc
 
-        return parse_observations_response(response.json())
+        return _nap_water_level_measurements(parse_observations_response(response.json()))
 
     async def fetch_historical_measurements(
         self,
@@ -166,7 +167,7 @@ class RwsClient:
             message = "Rijkswaterstaat historical observations are unavailable"
             raise ExternalServiceError(message) from exc
 
-        return parse_observations_response(response.json())
+        return _nap_water_level_measurements(parse_observations_response(response.json()))
 
 
 def _rws_datetime(value: datetime) -> str:
@@ -186,3 +187,12 @@ async def _read_limited_text(response: httpx.Response, max_bytes: int) -> str:
 
     content = b"".join(chunks)
     return content.decode(response.encoding or "utf-8", errors="replace")
+
+
+def _nap_water_level_measurements(measurements: list[Measurement]) -> list[Measurement]:
+    return [
+        measurement
+        for measurement in measurements
+        if measurement.parameter == "water_level"
+        and (measurement.source_metadata or {}).get("hoedanigheid") == "NAP"
+    ]

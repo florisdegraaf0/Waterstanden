@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -57,3 +59,67 @@ async def test_latest_water_level_locations_rejects_oversized_wfs_response(
 
         with pytest.raises(ExternalServiceError):
             await client.fetch_latest_water_level_locations()
+
+
+@pytest.mark.asyncio
+async def test_recent_measurements_request_and_result_use_nap_reference() -> None:
+    captured_payload: dict | None = None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_payload
+        captured_payload = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "WaarnemingenLijst": [
+                    _series("NAP", 3755),
+                    _series("TAW", 3988),
+                ]
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = RwsClient(
+            Settings(rws_waterwebservices_base_url="https://example.test"),
+            http_client,
+        )
+
+        measurements = await client.fetch_recent_measurements(
+            "maastricht.borgharen.maas.beneden",
+            48,
+        )
+
+    assert captured_payload is not None
+    assert captured_payload["AquoPlusWaarnemingMetadata"]["AquoMetadata"]["Hoedanigheid"] == {
+        "Code": "NAP"
+    }
+    assert [measurement.value for measurement in measurements] == [37.55]
+    assert {
+        (measurement.source_metadata or {}).get("hoedanigheid") for measurement in measurements
+    } == {"NAP"}
+
+
+def _series(hoedanigheid: str, value: int) -> dict:
+    return {
+        "Locatie": {
+            "Naam": "Borgharen Dorp",
+            "Code": "maastricht.borgharen.maas.beneden",
+        },
+        "AquoMetadata": {
+            "Compartiment": {"Code": "OW"},
+            "Eenheid": {"Code": "cm"},
+            "Grootheid": {"Code": "WATHTE"},
+            "Hoedanigheid": {"Code": hoedanigheid},
+            "MeetApparaat": {"Code": "10042"},
+            "ProcesType": "meting",
+        },
+        "MetingenLijst": [
+            {
+                "Tijdstip": "2026-08-18T10:00:00.000Z",
+                "Meetwaarde": {"Waarde_Numeriek": value},
+                "WaarnemingMetadata": {
+                    "Kwaliteitswaardecode": {"Code": "00"},
+                },
+            },
+        ],
+    }
