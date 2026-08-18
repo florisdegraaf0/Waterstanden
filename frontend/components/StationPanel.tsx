@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, Loader2, X } from "lucide-react";
+import { AlertCircle, Info, Loader2, X } from "lucide-react";
 
 import type { MeasurementPoint, SeasonalContext, SeasonalStatus, Station } from "@/lib/api";
 import { WaterLevelChart } from "@/components/WaterLevelChart";
@@ -111,7 +111,7 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
   if (!context) {
     return (
       <section className="border-y border-slate-200 py-4">
-        <div className="text-sm font-semibold text-ink">Seasonal context</div>
+        <SeasonalContextTitle />
         <div className="mt-2 text-sm text-slate-500">Historical comparison is loading.</div>
       </section>
     );
@@ -121,7 +121,7 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
   if (seasonal.status === "insufficient_data" && seasonal.sample_size === 0) {
     return (
       <section className="border-y border-slate-200 py-4">
-        <div className="text-sm font-semibold text-ink">Seasonal context</div>
+        <SeasonalContextTitle />
         <div className="mt-2 text-sm font-medium text-amber-700">
           No historical backfill data loaded.
         </div>
@@ -135,7 +135,7 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
   if (seasonal.status === "historical_data_unavailable") {
     return (
       <section className="border-y border-slate-200 py-4">
-        <div className="text-sm font-semibold text-ink">Seasonal context</div>
+        <SeasonalContextTitle />
         <div className="mt-2 text-sm font-medium text-amber-700">
           Historical comparison is unavailable.
         </div>
@@ -149,7 +149,7 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
   if (seasonal.status === "insufficient_data" || seasonal.percentile == null) {
     return (
       <section className="border-y border-slate-200 py-4">
-        <div className="text-sm font-semibold text-ink">Seasonal context</div>
+        <SeasonalContextTitle />
         <div className="mt-2 text-sm font-medium text-amber-700">Limited historical data available.</div>
         <div className="mt-1 text-xs text-slate-500">
           {seasonal.sample_size} daily values across {seasonal.years_used} years.
@@ -162,7 +162,7 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
     <section className="border-y border-slate-200 py-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-sm font-semibold text-ink">Seasonal context</div>
+          <SeasonalContextTitle />
           <div className="mt-2 text-2xl font-semibold text-ink">
             {formatPercentile(seasonal.percentile)}
           </div>
@@ -197,6 +197,20 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
         </div>
       ) : null}
     </section>
+  );
+}
+
+function SeasonalContextTitle() {
+  return (
+    <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+      <span>Seasonal context</span>
+      <Info
+        aria-label="Seasonal percentile uses the 24 hour average water level."
+        className="text-slate-400"
+        size={14}
+        title="Seasonal percentile uses the 24 hour average water level."
+      />
+    </div>
   );
 }
 

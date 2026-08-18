@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_app_settings, get_db, get_rws_client
 from app.clients.rws.client import RwsClient
 from app.config import Settings
-from app.domain.curated_stations import CURATED_STATION_IDS, TIDAL_DAILY_MEAN_SEASONAL_STATION_IDS
+from app.domain.curated_stations import CURATED_STATION_IDS
 from app.domain.seasonal import SeasonalConfig
 from app.exceptions import StationNotFound
 from app.repositories.water import WaterRepository
@@ -90,7 +90,7 @@ async def get_seasonal_context(
         raise StationNotFound(f"Station {station_id!r} was not found")
 
     current_measurements = None
-    if station_id in TIDAL_DAILY_MEAN_SEASONAL_STATION_IDS:
+    if current_value is not None and measured_at is not None:
         current_measurements = await WaterService(
             rws_client,
             use_fallback_measurements=False,

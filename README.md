@@ -93,7 +93,7 @@ uv run python -m app.jobs.backfill_station \
   --to 2025-12-31
 ```
 
-The job is idempotent: it upserts raw normalized measurements and recomputes daily median statistics for each chunk. Percentiles compare the current value with historical daily medians in a configurable ±14 day seasonal window, excluding the current year.
+The job is idempotent: it upserts raw normalized measurements and recomputes daily statistics for each chunk. Percentiles compare the current 24-hour mean with historical daily means in a configurable ±14 day seasonal window, excluding the current year.
 
 To keep the persisted station list limited to currently active stations, run:
 

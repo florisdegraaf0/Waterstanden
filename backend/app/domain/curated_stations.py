@@ -192,18 +192,3 @@ CURATED_STATIONS: tuple[CuratedStation, ...] = (
 
 CURATED_STATION_BY_ID = {station.id: station for station in CURATED_STATIONS}
 CURATED_STATION_IDS = frozenset(CURATED_STATION_BY_ID)
-
-TIDAL_DAILY_MEAN_SEASONAL_STATION_IDS = frozenset(
-    {
-        "hoekvanholland",
-        "vlissingen",
-        "ijmuiden.buitenhaven",
-        "delfzijl",
-        "denhelder.marsdiep",
-        "harlingen.waddenzee",
-        "dordrecht.oudemaas.benedenmerwede",
-        "rotterdam.nieuwemaas.boerengat",
-        "moerdijk",
-        "hellevoetsluis",
-    }
-)

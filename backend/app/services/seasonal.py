@@ -5,7 +5,6 @@ from statistics import mean
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.domain.curated_stations import TIDAL_DAILY_MEAN_SEASONAL_STATION_IDS
 from app.domain.models import DailyStatistic, Measurement, SeasonalContext, Station
 from app.domain.seasonal import SeasonalConfig, calculate_seasonal_context
 from app.repositories.water import WaterRepository
@@ -65,7 +64,7 @@ class SeasonalContextService:
 
         comparison_value = current_value
         comparison_daily_values = daily_values
-        if station_id in TIDAL_DAILY_MEAN_SEASONAL_STATION_IDS and current_measurements is not None:
+        if current_measurements is not None:
             comparison_value = _mean_measurement_value(current_measurements, parameter)
             comparison_daily_values = _use_daily_mean_values(daily_values)
 
