@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_app_settings, get_db, get_rws_client
 from app.clients.rws.client import RwsClient
 from app.config import Settings
+from app.domain.curated_stations import CURATED_STATION_IDS
 from app.domain.seasonal import SeasonalConfig
+from app.exceptions import StationNotFound
 from app.repositories.water import WaterRepository
 from app.schemas.stations import (
     CurrentMeasurement,
@@ -83,6 +85,9 @@ async def get_seasonal_context(
     current_unit: str | None = None,
     measured_at: datetime | None = None,
 ):
+    if station_id not in CURATED_STATION_IDS:
+        raise StationNotFound(f"Station {station_id!r} was not found")
+
     context = SeasonalContextService(
         WaterRepository(db),
         SeasonalConfig(

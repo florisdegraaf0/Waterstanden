@@ -4,7 +4,7 @@ import pytest
 
 from app.clients.rws.models import RwsLatestObservation
 from app.domain.models import Measurement
-from app.exceptions import ExternalServiceError
+from app.exceptions import ExternalServiceError, StationNotFound
 from app.services.water import WaterService
 
 
@@ -19,7 +19,12 @@ class StationRwsClient:
 
     async def fetch_latest_water_level_locations(self) -> list[RwsLatestObservation]:
         return [
-            _observation("active", datetime(2026, 8, 17, 10, 0, tzinfo=UTC), 937),
+            _observation("venlo", datetime(2026, 8, 17, 10, 0, tzinfo=UTC), 937),
+            _observation(
+                "lobith.bovenrijn.tolkamer",
+                datetime(2026, 8, 17, 10, 0, tzinfo=UTC),
+                900,
+            ),
             _observation("no-recent", datetime(2026, 8, 17, 10, 0, tzinfo=UTC), 700),
             _observation("old", datetime(2026, 8, 16, 9, 59, tzinfo=UTC), 800),
             _observation("missing", datetime(2026, 8, 17, 10, 0, tzinfo=UTC), None),
@@ -27,7 +32,7 @@ class StationRwsClient:
 
     async def fetch_recent_measurements(self, station_code: str, hours: int) -> list[Measurement]:
         self.recent_calls.append(station_code)
-        if station_code != "active":
+        if station_code != "venlo":
             return []
         return [
             Measurement(
@@ -44,7 +49,7 @@ class StationRwsClient:
 async def test_measurement_fallback_returns_marked_points_when_enabled() -> None:
     service = WaterService(FailingRwsClient(), use_fallback_measurements=True)
 
-    measurements = await service.get_measurements("lobith", 4)
+    measurements = await service.get_measurements("lobith.bovenrijn.tolkamer", 4)
 
     assert measurements
     assert {measurement.quality_code for measurement in measurements} == {"fallback"}
@@ -55,7 +60,7 @@ async def test_measurement_fallback_can_be_disabled() -> None:
     service = WaterService(FailingRwsClient(), use_fallback_measurements=False)
 
     with pytest.raises(ExternalServiceError):
-        await service.get_measurements("lobith", 4)
+        await service.get_measurements("lobith.bovenrijn.tolkamer", 4)
 
 
 @pytest.mark.asyncio
@@ -69,7 +74,7 @@ async def test_list_stations_only_includes_parsed_measurements_from_last_24_hour
 
     stations = await service.list_stations()
 
-    assert [station.id for station in stations] == ["active"]
+    assert [station.id for station in stations] == ["venlo"]
     assert stations[0].latest_value == pytest.approx(9.37)
 
 
@@ -84,8 +89,16 @@ async def test_list_stations_does_not_check_recent_measurements_by_default() -> 
 
     stations = await service.list_stations()
 
-    assert [station.id for station in stations] == ["active", "no-recent"]
+    assert [station.id for station in stations] == ["lobith.bovenrijn.tolkamer", "venlo"]
     assert rws_client.recent_calls == []
+
+
+@pytest.mark.asyncio
+async def test_measurements_reject_non_curated_station() -> None:
+    service = WaterService(StationRwsClient())
+
+    with pytest.raises(StationNotFound):
+        await service.get_measurements("not-curated", 4)
 
 
 def _observation(

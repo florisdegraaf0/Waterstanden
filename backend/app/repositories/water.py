@@ -16,6 +16,8 @@ from app.db.base import (
 )
 from app.domain.models import DailyStatistic, Measurement, Station
 
+_MEASUREMENT_UPSERT_BATCH_SIZE = 100
+
 
 class WaterRepository:
     def __init__(self, db: Session) -> None:
@@ -62,35 +64,25 @@ class WaterRepository:
         if not measurements:
             return 0
 
-        rows = [
-            {
-                "station_id": station_record_id,
-                "measured_at": measurement.measured_at,
-                "value": measurement.value,
-                "unit": measurement.unit,
-                "parameter": measurement.parameter,
-                "quality_code": measurement.quality_code,
-                "source_station_code": measurement.source_station_code,
-                "source_unit": measurement.source_unit,
-                "source_metadata": measurement.source_metadata or {},
-            }
-            for measurement in measurements
-        ]
-        statement = insert(MeasurementRecord).values(rows)
-        upsert = statement.on_conflict_do_update(
-            constraint="uq_measurement_series_time",
-            set_={
-                "value": statement.excluded.value,
-                "unit": statement.excluded.unit,
-                "quality_code": statement.excluded.quality_code,
-                "source_station_code": statement.excluded.source_station_code,
-                "source_unit": statement.excluded.source_unit,
-                "source_metadata": statement.excluded.source_metadata,
-                "updated_at": datetime.now().astimezone(),
-            },
-        )
-        result = self._db.execute(upsert)
-        return result.rowcount or 0
+        affected = 0
+        rows = _measurement_rows(station_record_id, measurements)
+        for batch in _chunks(rows, _MEASUREMENT_UPSERT_BATCH_SIZE):
+            statement = insert(MeasurementRecord).values(batch)
+            upsert = statement.on_conflict_do_update(
+                constraint="uq_measurement_series_time",
+                set_={
+                    "value": statement.excluded.value,
+                    "unit": statement.excluded.unit,
+                    "quality_code": statement.excluded.quality_code,
+                    "source_station_code": statement.excluded.source_station_code,
+                    "source_unit": statement.excluded.source_unit,
+                    "source_metadata": statement.excluded.source_metadata,
+                    "updated_at": datetime.now().astimezone(),
+                },
+            )
+            result = self._db.execute(upsert)
+            affected += result.rowcount or 0
+        return affected
 
     def recompute_daily_statistics(
         self,
@@ -150,6 +142,51 @@ class WaterRepository:
             affected += 1
         return affected
 
+    def upsert_daily_statistics(
+        self,
+        *,
+        station_record_id: int,
+        parameter: str,
+        daily_statistics: list[DailyStatistic],
+    ) -> int:
+        affected = 0
+        for statistic in daily_statistics:
+            statement = (
+                insert(StationDailyStatisticRecord)
+                .values(
+                    station_id=station_record_id,
+                    date=statistic.date,
+                    parameter=parameter,
+                    min_value=statistic.min_value,
+                    max_value=statistic.max_value,
+                    mean_value=statistic.mean_value,
+                    median_value=statistic.median_value,
+                    observation_count=statistic.observation_count,
+                    source_metadata={
+                        "source": "historical_backfill_daily_aggregation",
+                        "raw_observation_count": statistic.observation_count,
+                    },
+                )
+                .on_conflict_do_update(
+                    constraint="uq_station_daily_statistics_series_date",
+                    set_={
+                        "min_value": statistic.min_value,
+                        "max_value": statistic.max_value,
+                        "mean_value": statistic.mean_value,
+                        "median_value": statistic.median_value,
+                        "observation_count": statistic.observation_count,
+                        "source_metadata": {
+                            "source": "historical_backfill_daily_aggregation",
+                            "raw_observation_count": statistic.observation_count,
+                        },
+                        "updated_at": datetime.now().astimezone(),
+                    },
+                )
+            )
+            result = self._db.execute(statement)
+            affected += result.rowcount or 0
+        return affected
+
     def list_daily_statistics(
         self,
         station_external_id: str,
@@ -188,3 +225,28 @@ def _merge_daily_source_metadata(
         "source_unit": first.source_unit,
         "observation_count": len(measurements),
     }
+
+
+def _measurement_rows(
+    station_record_id: int,
+    measurements: list[Measurement],
+) -> list[dict[str, object]]:
+    rows_by_key: dict[tuple[int, str, datetime], dict[str, object]] = {}
+    for measurement in measurements:
+        rows_by_key[(station_record_id, measurement.parameter, measurement.measured_at)] = {
+            "station_id": station_record_id,
+            "measured_at": measurement.measured_at,
+            "value": measurement.value,
+            "unit": measurement.unit,
+            "parameter": measurement.parameter,
+            "quality_code": measurement.quality_code,
+            "source_station_code": measurement.source_station_code,
+            "source_unit": measurement.source_unit,
+            "source_metadata": measurement.source_metadata or {},
+        }
+    return list(rows_by_key.values())
+
+
+def _chunks[T](values: list[T], size: int):
+    for start in range(0, len(values), size):
+        yield values[start : start + size]

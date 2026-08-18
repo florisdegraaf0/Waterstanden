@@ -11,6 +11,7 @@ from app.domain.models import DailyStatistic, Measurement
 from app.main import app
 
 RECENT_MEASURED_AT = datetime.now(UTC).replace(microsecond=0)
+LOBITH_ID = "lobith.bovenrijn.tolkamer"
 
 
 class FakeRwsClient:
@@ -20,7 +21,7 @@ class FakeRwsClient:
     async def fetch_latest_water_level_locations(self) -> list[RwsLatestObservation]:
         return [
             RwsLatestObservation(
-                code="lobith",
+                code=LOBITH_ID,
                 name="Lobith",
                 latitude=51.854205,
                 longitude=6.091178,
@@ -38,7 +39,7 @@ class FakeRwsClient:
         ]
 
     async def fetch_recent_measurements(self, station_code: str, hours: int) -> list[Measurement]:
-        assert station_code == "lobith"
+        assert station_code == LOBITH_ID
         assert hours in {24, 48}
         return [
             Measurement(
@@ -77,7 +78,7 @@ async def test_stations_endpoint_returns_normalized_stations() -> None:
     assert response.status_code == 200
     assert response.json() == [
         {
-            "id": "lobith",
+            "id": LOBITH_ID,
             "name": "Lobith",
             "latitude": 51.854205,
             "longitude": 6.091178,
@@ -96,7 +97,7 @@ async def test_measurements_endpoint_returns_recent_points() -> None:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        response = await client.get("/api/stations/lobith/measurements?hours=48")
+        response = await client.get(f"/api/stations/{LOBITH_ID}/measurements?hours=48")
 
     assert response.status_code == 200
     assert response.json()[0]["value"] == 9.37
@@ -107,7 +108,7 @@ async def test_measurements_endpoint_validates_hours() -> None:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        response = await client.get("/api/stations/lobith/measurements?hours=500")
+        response = await client.get(f"/api/stations/{LOBITH_ID}/measurements?hours=500")
 
     assert response.status_code == 422
 
@@ -121,7 +122,7 @@ async def test_seasonal_context_endpoint_returns_percentile(
             pass
 
         def list_daily_statistics(self, station_external_id: str, parameter: str):
-            assert station_external_id == "lobith"
+            assert station_external_id == LOBITH_ID
             assert parameter == "water_level"
             return [
                 DailyStatistic(
@@ -143,7 +144,7 @@ async def test_seasonal_context_endpoint_returns_percentile(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         response = await client.get(
-            "/api/stations/lobith/seasonal-context",
+            f"/api/stations/{LOBITH_ID}/seasonal-context",
             params={
                 "current_value": 9.37,
                 "current_unit": "m NAP",
@@ -153,7 +154,7 @@ async def test_seasonal_context_endpoint_returns_percentile(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["station_id"] == "lobith"
+    assert payload["station_id"] == LOBITH_ID
     assert payload["seasonal_context"]["status"] == "extremely_high"
     assert payload["seasonal_context"]["sample_size"] == 150
     assert payload["seasonal_context"]["reference_values"]["p50"] > 0
@@ -176,7 +177,7 @@ async def test_seasonal_context_endpoint_handles_insufficient_data(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         response = await client.get(
-            "/api/stations/lobith/seasonal-context",
+            f"/api/stations/{LOBITH_ID}/seasonal-context",
             params={
                 "current_value": 9.37,
                 "current_unit": "m NAP",
@@ -215,7 +216,7 @@ async def test_seasonal_context_endpoint_without_current_value_is_fast_insuffici
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        response = await client.get("/api/stations/lobith/seasonal-context")
+        response = await client.get(f"/api/stations/{LOBITH_ID}/seasonal-context")
 
     assert response.status_code == 200
     assert response.json()["seasonal_context"]["status"] == "insufficient_data"
@@ -240,7 +241,7 @@ async def test_seasonal_context_endpoint_handles_missing_historical_tables(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         response = await client.get(
-            "/api/stations/lobith/seasonal-context",
+            f"/api/stations/{LOBITH_ID}/seasonal-context",
             params={
                 "current_value": 9.37,
                 "current_unit": "m NAP",

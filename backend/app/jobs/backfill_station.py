@@ -3,11 +3,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+from collections import defaultdict
 from datetime import UTC, date, datetime, time, timedelta
+from statistics import mean, median
 
 from app.clients.rws.client import RwsClient
 from app.config import get_settings
-from app.domain.models import Station
+from app.domain.curated_stations import CURATED_STATIONS
+from app.domain.models import DailyStatistic, Measurement, Station
 from app.services.water import WaterService
 
 logger = logging.getLogger(__name__)
@@ -53,12 +56,11 @@ async def run_backfill(
                     if measurement.parameter == parameter
                     and _is_selected_lobith_series(measurement.source_metadata or {})
                 ]
-                upserted = repository.upsert_measurements(station_record_id, measurements)
-                daily_count = repository.recompute_daily_statistics(
+                daily_statistics = _daily_statistics_from_measurements(measurements)
+                daily_count = repository.upsert_daily_statistics(
                     station_record_id=station_record_id,
                     parameter=parameter,
-                    start_date=chunk_start,
-                    end_date=chunk_end + timedelta(days=1),
+                    daily_statistics=daily_statistics,
                 )
                 db.commit()
                 logger.info(
@@ -66,7 +68,6 @@ async def run_backfill(
                     extra={
                         "station_id": station_id,
                         "measurements_seen": len(measurements),
-                        "measurements_upserted": upserted,
                         "daily_statistics": daily_count,
                     },
                 )
@@ -117,26 +118,62 @@ def _is_selected_lobith_series(source_metadata: dict[str, object]) -> bool:
     )
 
 
+def _daily_statistics_from_measurements(measurements: list[Measurement]) -> list[DailyStatistic]:
+    by_date: dict[date, list[Measurement]] = defaultdict(list)
+    for measurement in measurements:
+        by_date[measurement.measured_at.date()].append(measurement)
+
+    daily_statistics: list[DailyStatistic] = []
+    for day, day_measurements in sorted(by_date.items()):
+        values = [measurement.value for measurement in day_measurements]
+        daily_statistics.append(
+            DailyStatistic(
+                date=day,
+                value=median(values),
+                min_value=min(values),
+                max_value=max(values),
+                mean_value=mean(values),
+                median_value=median(values),
+                observation_count=len(values),
+            )
+        )
+    return daily_statistics
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Backfill historical RWS station measurements.")
-    parser.add_argument("--station-id", required=True)
+    parser.add_argument("--station-id")
+    parser.add_argument(
+        "--top-stations",
+        action="store_true",
+        help="Backfill all curated top-25 stations.",
+    )
     parser.add_argument("--parameter", default="water_level")
     parser.add_argument("--from", dest="from_date", required=True)
     parser.add_argument("--to", dest="to_date", required=True)
-    return parser.parse_args()
+    args = parser.parse_args()
+    if not args.station_id and not args.top_stations:
+        parser.error("--station-id is required unless --top-stations is set")
+    return args
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     args = _parse_args()
-    asyncio.run(
-        run_backfill(
-            station_id=args.station_id,
-            parameter=args.parameter,
-            start_date=date.fromisoformat(args.from_date),
-            end_date=date.fromisoformat(args.to_date),
-        )
+    station_ids = (
+        [station.id for station in CURATED_STATIONS]
+        if args.top_stations
+        else [args.station_id]
     )
+    for station_id in station_ids:
+        asyncio.run(
+            run_backfill(
+                station_id=station_id,
+                parameter=args.parameter,
+                start_date=date.fromisoformat(args.from_date),
+                end_date=date.fromisoformat(args.to_date),
+            )
+        )
 
 
 if __name__ == "__main__":

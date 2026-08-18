@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.clients.rws.client import RwsClient
 from app.clients.rws.parsers import normalize_latest_water_level
+from app.domain.curated_stations import CURATED_STATION_BY_ID, CURATED_STATION_IDS
 from app.domain.models import Measurement, Station
 from app.exceptions import ExternalServiceError, StationNotFound
 
@@ -35,6 +36,9 @@ class WaterService:
         cutoff = now - self._active_station_max_age
 
         for observation in observations:
+            curated = CURATED_STATION_BY_ID.get(observation.code)
+            if curated is None:
+                continue
             if observation.code in seen:
                 continue
             latest = normalize_latest_water_level(observation)
@@ -47,7 +51,7 @@ class WaterService:
             candidates.append(
                 Station(
                     id=observation.code,
-                    name=observation.name,
+                    name=curated.display_name,
                     latitude=observation.latitude,
                     longitude=observation.longitude,
                     latest_value=latest.value,
@@ -56,7 +60,13 @@ class WaterService:
                     parameter="water_level",
                     status=observation.status,
                     quality_code=observation.quality_code,
-                    metadata=observation.raw_metadata,
+                    metadata={
+                        **observation.raw_metadata,
+                        "rws_name": observation.name,
+                        "water_system": curated.water_system,
+                        "significance": curated.significance,
+                        "sort_order": curated.sort_order,
+                    },
                 )
             )
 
@@ -65,7 +75,10 @@ class WaterService:
             if self._active_station_verify_recent_measurements
             else candidates
         )
-        return sorted(stations, key=lambda station: station.name.lower())
+        return sorted(
+            stations,
+            key=lambda station: CURATED_STATION_BY_ID[station.id].sort_order,
+        )
 
     async def get_station(self, station_id: str) -> Station:
         for station in await self.list_stations():
@@ -74,6 +87,9 @@ class WaterService:
         raise StationNotFound(f"Station {station_id!r} was not found")
 
     async def get_measurements(self, station_id: str, hours: int) -> list[Measurement]:
+        if station_id not in CURATED_STATION_IDS:
+            raise StationNotFound(f"Station {station_id!r} was not found")
+
         try:
             measurements = await self._rws_client.fetch_recent_measurements(station_id, hours)
         except ExternalServiceError:
