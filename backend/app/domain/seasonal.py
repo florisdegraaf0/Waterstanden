@@ -40,6 +40,7 @@ def calculate_seasonal_context(
     ]
     reference_values = [value.value for value in reference]
     years = sorted({value.date.year for value in reference})
+    historical_years = {value.date.year for value in historical_daily_values}
     reference_period = ReferencePeriod(
         window_days=config.window_days,
         first_year=years[0] if years else None,
@@ -52,6 +53,8 @@ def calculate_seasonal_context(
             percentile=None,
             sample_size=len(reference_values),
             years_used=len(years),
+            historical_sample_size=len(historical_daily_values),
+            historical_years=len(historical_years),
             reference_period=reference_period,
             reference_values=None,
         )
@@ -62,6 +65,8 @@ def calculate_seasonal_context(
         percentile=percentile,
         sample_size=len(reference_values),
         years_used=len(years),
+        historical_sample_size=len(historical_daily_values),
+        historical_years=len(historical_years),
         reference_period=reference_period,
         reference_values=PercentileReferenceValues(
             p05=_quantile(reference_values, 0.05),

@@ -129,6 +129,8 @@ async def get_seasonal_context(
             status=context.status,
             sample_size=context.sample_size,
             years_used=context.years_used,
+            historical_sample_size=context.historical_sample_size,
+            historical_years=context.historical_years,
             reference_period=SeasonalReferencePeriod(
                 window_days=context.reference_period.window_days,
                 first_year=context.reference_period.first_year,

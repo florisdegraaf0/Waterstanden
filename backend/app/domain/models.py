@@ -70,6 +70,8 @@ class SeasonalContext:
     percentile: float | None
     sample_size: int
     years_used: int
+    historical_sample_size: int
+    historical_years: int
     reference_period: ReferencePeriod
     reference_values: PercentileReferenceValues | None
 

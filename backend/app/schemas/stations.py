@@ -53,6 +53,8 @@ class SeasonalContextPayload(BaseModel):
     status: str
     sample_size: int
     years_used: int
+    historical_sample_size: int
+    historical_years: int
     reference_period: SeasonalReferencePeriod
     reference_values: SeasonalReferenceValues | None = None
 

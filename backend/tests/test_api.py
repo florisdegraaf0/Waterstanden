@@ -157,6 +157,8 @@ async def test_seasonal_context_endpoint_returns_percentile(
     assert payload["station_id"] == LOBITH_ID
     assert payload["seasonal_context"]["status"] == "extremely_high"
     assert payload["seasonal_context"]["sample_size"] == 150
+    assert payload["seasonal_context"]["historical_sample_size"] == 150
+    assert payload["seasonal_context"]["historical_years"] == 15
     assert payload["seasonal_context"]["reference_values"]["p50"] > 0
 
 
@@ -259,6 +261,8 @@ async def test_seasonal_context_endpoint_handles_insufficient_data(
         "status": "insufficient_data",
         "sample_size": 0,
         "years_used": 0,
+        "historical_sample_size": 0,
+        "historical_years": 0,
         "reference_period": {
             "window_days": 14,
             "first_year": None,

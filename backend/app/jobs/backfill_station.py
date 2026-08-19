@@ -8,8 +8,9 @@ from datetime import UTC, date, datetime, time, timedelta
 from statistics import mean, median
 
 from app.clients.rws.client import RwsClient
+from app.clients.rws.parsers import normalize_latest_water_level
 from app.config import get_settings
-from app.domain.curated_stations import CURATED_STATIONS
+from app.domain.curated_stations import CURATED_STATION_BY_ID, CURATED_STATIONS
 from app.domain.models import DailyStatistic, HistoricalChangeStatistic, Measurement, Station
 from app.services.water import WaterService
 
@@ -89,6 +90,13 @@ async def _get_station_for_backfill(client: RwsClient, station_id: str) -> Stati
     try:
         return await service.get_station(station_id)
     except Exception:
+        station = await _get_curated_station_from_latest_feed(client, station_id)
+        if station is not None:
+            logger.warning(
+                "Using stale latest station metadata for historical backfill",
+                extra={"station_id": station_id},
+            )
+            return station
         if station_id != "lobith.bovenrijn.tolkamer":
             raise
         logger.warning("Using built-in Lobith station metadata for backfill")
@@ -105,6 +113,41 @@ async def _get_station_for_backfill(client: RwsClient, station_id: str) -> Stati
             quality_code=None,
             metadata={"source": "built_in_lobith_backfill_metadata"},
         )
+
+
+async def _get_curated_station_from_latest_feed(
+    client: RwsClient,
+    station_id: str,
+) -> Station | None:
+    curated = CURATED_STATION_BY_ID.get(station_id)
+    if curated is None:
+        return None
+
+    for observation in await client.fetch_latest_water_level_locations():
+        if observation.code != station_id:
+            continue
+        latest = normalize_latest_water_level(observation)
+        return Station(
+            id=observation.code,
+            name=curated.display_name,
+            latitude=observation.latitude,
+            longitude=observation.longitude,
+            latest_value=latest.value if latest else None,
+            unit=latest.unit if latest else None,
+            measured_at=latest.measured_at if latest else None,
+            parameter="water_level",
+            status=observation.status,
+            quality_code=observation.quality_code,
+            metadata={
+                **observation.raw_metadata,
+                "rws_name": observation.name,
+                "water_system": curated.water_system,
+                "significance": curated.significance,
+                "sort_order": curated.sort_order,
+                "source": "stale_latest_feed_backfill_metadata",
+            },
+        )
+    return None
 
 
 def _year_chunks(start_date: date, end_date: date) -> list[tuple[date, date]]:

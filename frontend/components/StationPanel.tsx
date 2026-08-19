@@ -238,7 +238,7 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
           No historical backfill data loaded.
         </div>
         <div className="mt-1 text-xs text-slate-500">
-          Run the Lobith historical backfill to populate seasonal comparison.
+          Run the historical backfill for this station to populate seasonal comparison.
         </div>
       </section>
     );
@@ -259,13 +259,22 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
   }
 
   if (seasonal.status === "insufficient_data" || seasonal.percentile == null) {
+    const hasBackfill = seasonal.historical_sample_size > 0;
+    const message = hasBackfill
+      ? "Historical backfill is loaded, but not enough values match this time of year."
+      : "Historical backfill has not loaded any daily values for this station.";
+    const detail = hasBackfill
+      ? [
+          `${seasonal.sample_size} seasonal daily values across ${seasonal.years_used} years.`,
+          `${seasonal.historical_sample_size} total daily values are stored across ${seasonal.historical_years} years.`
+        ].join(" ")
+      : "The upstream historical endpoint may have no data for this station code, or the backfill has not been run successfully yet.";
+
     return (
       <section className="border-y border-slate-200 py-4">
         <SeasonalContextTitle />
-        <div className="mt-2 text-sm font-medium text-amber-700">Limited historical data available.</div>
-        <div className="mt-1 text-xs text-slate-500">
-          {seasonal.sample_size} daily values across {seasonal.years_used} years.
-        </div>
+        <div className="mt-2 text-sm font-medium text-amber-700">{message}</div>
+        <div className="mt-1 text-xs text-slate-500">{detail}</div>
       </section>
     );
   }

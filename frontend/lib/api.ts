@@ -44,6 +44,8 @@ export type SeasonalContext = {
     status: SeasonalStatus;
     sample_size: number;
     years_used: number;
+    historical_sample_size: number;
+    historical_years: number;
     reference_period: {
       window_days: number;
       first_year: number | null;

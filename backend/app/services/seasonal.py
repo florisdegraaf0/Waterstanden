@@ -24,6 +24,8 @@ class SeasonalContextService:
                 percentile=None,
                 sample_size=0,
                 years_used=0,
+                historical_sample_size=0,
+                historical_years=0,
                 reference_period=_empty_reference_period(self._config.window_days),
                 reference_values=None,
             )
@@ -54,6 +56,8 @@ class SeasonalContextService:
                 percentile=None,
                 sample_size=0,
                 years_used=0,
+                historical_sample_size=0,
+                historical_years=0,
                 reference_period=_empty_reference_period(self._config.window_days),
                 reference_values=None,
             )
@@ -74,6 +78,8 @@ class SeasonalContextService:
                 percentile=None,
                 sample_size=0,
                 years_used=0,
+                historical_sample_size=len(daily_values),
+                historical_years=len({value.date.year for value in daily_values}),
                 reference_period=_empty_reference_period(self._config.window_days),
                 reference_values=None,
             )
@@ -109,6 +115,8 @@ def _historical_data_unavailable(window_days: int) -> SeasonalContext:
         percentile=None,
         sample_size=0,
         years_used=0,
+        historical_sample_size=0,
+        historical_years=0,
         reference_period=_empty_reference_period(window_days),
         reference_values=None,
     )
