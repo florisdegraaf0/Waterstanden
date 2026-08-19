@@ -71,6 +71,7 @@ npm run build
 - `GET /api/stations/{station_id}/measurements?hours=48`
 - `GET /api/stations/{station_id}/seasonal-context?parameter=water_level`
 - `GET /api/stations/{station_id}/anomaly?parameter=water_level`
+- `GET /api/overview?parameter=water_level&filter=all&sort=anomaly_score&limit=50`
 
 The frontend receives normalized application models only. Rijkswaterstaat-specific response fields stay inside the backend client/service layer.
 
@@ -147,3 +148,21 @@ GET /api/stations/{station_id}/anomaly
 If recent data looks unreliable, for example stale measurements, fallback values,
 duplicate timestamps, flatlining, or an isolated spike, the response marks this
 as a data-quality anomaly and suppresses hydrological scoring.
+
+## Netherlands Overview
+
+The overview screen at `/overview` answers "What's unusual today?" with one
+overview API request rather than one anomaly request per station.
+
+The default ranking uses the cached station anomaly score, descending. This is
+preferred over raw seasonal percentile because the anomaly score is two-sided and
+can combine unusual absolute levels with unusual 24-hour movement. A 1st
+percentile and a 99th percentile are therefore treated as equally unusual before
+the 24-hour movement component is applied.
+
+Overview snapshots are persisted in `station_overview_snapshots` and are lazily
+refreshed by `GET /api/overview` when older than `OVERVIEW_CACHE_TTL_MINUTES`
+(default: 15). A refresh fetches the active station list once, fetches recent
+measurements with bounded concurrency, and reads historical daily and 24-hour
+change statistics in batch. Stale or data-quality-suppressed stations are
+excluded from the main ranked list and counted in the coverage summary.

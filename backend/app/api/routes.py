@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -18,6 +18,11 @@ from app.schemas.stations import (
     AnomalySignalPayload,
     CurrentMeasurement,
     MeasurementPoint,
+    OverviewCoveragePayload,
+    OverviewPayload,
+    OverviewPrimarySignalPayload,
+    OverviewStationPayload,
+    OverviewSummaryPayload,
     SeasonalContextPayload,
     SeasonalReferencePeriod,
     SeasonalReferenceValues,
@@ -27,6 +32,7 @@ from app.schemas.stations import (
     StationSummary,
 )
 from app.services.anomaly import AnomalyService
+from app.services.overview import OVERVIEW_FILTERS, OVERVIEW_SORTS, OverviewService
 from app.services.seasonal import SeasonalContextService
 from app.services.water import WaterService
 
@@ -50,6 +56,71 @@ async def list_stations(
         active_station_verify_recent_measurements=settings.active_station_verify_recent_measurements,
     )
     return await service.list_stations()
+
+
+@router.get("/overview", response_model=OverviewPayload)
+async def get_overview(
+    rws_client: Annotated[RwsClient, Depends(get_rws_client)],
+    settings: Annotated[Settings, Depends(get_app_settings)],
+    db: Annotated[Session, Depends(get_db)],
+    parameter: str = "water_level",
+    filter: Annotated[str, Query(pattern=f"^({'|'.join(sorted(OVERVIEW_FILTERS))})$")] = "all",
+    sort: Annotated[str, Query(pattern=f"^({'|'.join(sorted(OVERVIEW_SORTS))})$")] = (
+        "anomaly_score"
+    ),
+    limit: Annotated[int | None, Query(ge=1, le=200)] = None,
+):
+    repository = WaterRepository(db)
+    result = await OverviewService(
+        water_service=WaterService(
+            rws_client,
+            use_fallback_measurements=False,
+            active_station_max_age_hours=settings.active_station_max_age_hours,
+            active_station_recent_check_concurrency=(
+                settings.active_station_recent_check_concurrency
+            ),
+            active_station_verify_recent_measurements=(
+                settings.active_station_verify_recent_measurements
+            ),
+        ),
+        repository=repository,
+        seasonal_config=SeasonalConfig(
+            window_days=settings.seasonal_window_days,
+            min_sample_size=settings.seasonal_min_sample_size,
+            min_years=settings.seasonal_min_years,
+        ),
+        anomaly_config=AnomalyConfig(
+            seasonal_window_days=settings.seasonal_window_days,
+            delta_tolerance_minutes=settings.anomaly_delta_tolerance_minutes,
+            recent_window_hours=settings.anomaly_recent_window_hours,
+            stale_after_minutes=settings.anomaly_stale_after_minutes,
+        ),
+        cache_ttl=timedelta(minutes=settings.overview_cache_ttl_minutes),
+        recent_measurement_concurrency=settings.active_station_recent_check_concurrency,
+    ).get_overview(
+        parameter=parameter,
+        overview_filter=filter,
+        sort=sort,
+        limit=limit or settings.overview_default_limit,
+    )
+    return OverviewPayload(
+        generated_at=result.generated_at,
+        summary=OverviewSummaryPayload(
+            stations_monitored=result.summary.stations_monitored,
+            high_or_extreme_anomalies=result.summary.high_or_extreme_anomalies,
+            extreme_anomalies=result.summary.extreme_anomalies,
+            rapidly_rising=result.summary.rapidly_rising,
+            rapidly_falling=result.summary.rapidly_falling,
+            data_limited_or_stale=result.summary.data_limited_or_stale,
+        ),
+        coverage=OverviewCoveragePayload(
+            historical_context_stations=result.coverage.historical_context_stations,
+            insufficient_data_stations=result.coverage.insufficient_data_stations,
+            stale_stations=result.coverage.stale_stations,
+            rankable_stations=result.coverage.rankable_stations,
+        ),
+        stations=[_overview_station_payload(station) for station in result.stations],
+    )
 
 
 @router.get("/stations/{station_id}", response_model=StationDetail)
@@ -228,4 +299,41 @@ def _anomaly_signal_payload(signal) -> AnomalySignalPayload:
         unit=signal.unit,
         percentile=signal.percentile,
         message=signal.message,
+    )
+
+
+def _overview_station_payload(station) -> OverviewStationPayload:
+    return OverviewStationPayload(
+        station_id=station.station_id,
+        station_name=station.station_name,
+        water_system=station.water_system,
+        latitude=station.latitude,
+        longitude=station.longitude,
+        current_value=station.current_value,
+        unit=station.unit,
+        measured_at=station.measured_at,
+        parameter=station.parameter,
+        seasonal_percentile=station.seasonal_percentile,
+        seasonal_status=station.seasonal_status,
+        anomaly_score=station.anomaly_score,
+        anomaly_severity=station.anomaly_severity,
+        anomaly_status=station.anomaly_status,
+        anomaly_direction=station.anomaly_direction,
+        confidence=station.confidence,
+        data_quality_status=station.data_quality_status,
+        freshness_status=station.freshness_status,
+        delta_24h=station.delta_24h,
+        primary_signal=(
+            OverviewPrimarySignalPayload(
+                type=station.primary_signal.type,
+                direction=station.primary_signal.direction,
+                value=station.primary_signal.value,
+                unit=station.primary_signal.unit,
+                percentile=station.primary_signal.percentile,
+                score=station.primary_signal.score,
+                message=station.primary_signal.message,
+            )
+            if station.primary_signal
+            else None
+        ),
     )

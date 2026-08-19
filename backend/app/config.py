@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     anomaly_delta_tolerance_minutes: int = 45
     anomaly_recent_window_hours: int = 48
     anomaly_stale_after_minutes: int = 180
+    overview_cache_ttl_minutes: int = 15
+    overview_default_limit: int = 50
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

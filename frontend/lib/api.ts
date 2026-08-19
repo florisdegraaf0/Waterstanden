@@ -99,6 +99,72 @@ export type StationAnomaly = {
   };
 };
 
+export type OverviewFilter =
+  | "all"
+  | "high_extreme"
+  | "unusually_high"
+  | "unusually_low"
+  | "rapidly_rising"
+  | "rapidly_falling";
+
+export type OverviewSort =
+  | "anomaly_score"
+  | "largest_24h_rise"
+  | "largest_24h_fall"
+  | "seasonal_unusualness";
+
+export type OverviewPrimarySignal = {
+  type: string;
+  direction: string | null;
+  value: number | null;
+  unit: string | null;
+  percentile: number | null;
+  score: number | null;
+  message: string;
+};
+
+export type OverviewStation = {
+  station_id: string;
+  station_name: string;
+  water_system: string;
+  latitude: number;
+  longitude: number;
+  current_value: number | null;
+  unit: string | null;
+  measured_at: string | null;
+  parameter: string;
+  seasonal_percentile: number | null;
+  seasonal_status: SeasonalStatus;
+  anomaly_score: number | null;
+  anomaly_severity: StationAnomaly["anomaly"]["severity"];
+  anomaly_status: StationAnomaly["anomaly"]["status"];
+  anomaly_direction: string | null;
+  confidence: StationAnomaly["anomaly"]["confidence"];
+  data_quality_status: StationAnomaly["data_quality"]["status"];
+  freshness_status: "current" | "stale";
+  delta_24h: number | null;
+  primary_signal: OverviewPrimarySignal | null;
+};
+
+export type Overview = {
+  generated_at: string;
+  summary: {
+    stations_monitored: number;
+    high_or_extreme_anomalies: number;
+    extreme_anomalies: number;
+    rapidly_rising: number;
+    rapidly_falling: number;
+    data_limited_or_stale: number;
+  };
+  coverage: {
+    historical_context_stations: number;
+    insufficient_data_stations: number;
+    stale_stations: number;
+    rankable_stations: number;
+  };
+  stations: OverviewStation[];
+};
+
 async function fetchJson<T>(path: string): Promise<T> {
   const url = `${API_BASE_URL}${path}`;
   let response: Response;
@@ -162,4 +228,18 @@ export function fetchStationAnomaly(station: Station): Promise<StationAnomaly> {
   return fetchJson<StationAnomaly>(
     `/api/stations/${encodeURIComponent(station.id)}/anomaly?${params}`
   );
+}
+
+export function fetchOverview(options: {
+  filter: OverviewFilter;
+  sort: OverviewSort;
+  limit?: number;
+}): Promise<Overview> {
+  const params = new URLSearchParams({
+    parameter: "water_level",
+    filter: options.filter,
+    sort: options.sort,
+    limit: String(options.limit ?? 50)
+  });
+  return fetchJson<Overview>(`/api/overview?${params}`);
 }

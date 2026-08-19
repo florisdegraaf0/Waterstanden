@@ -102,3 +102,59 @@ class StationAnomalyPayload(BaseModel):
     current: CurrentMeasurement
     anomaly: AnomalyResultPayload
     data_quality: AnomalyDataQualityPayload
+
+
+class OverviewPrimarySignalPayload(BaseModel):
+    type: str
+    direction: str | None = None
+    value: float | None = None
+    unit: str | None = None
+    percentile: float | None = None
+    score: int | None = None
+    message: str
+
+
+class OverviewStationPayload(BaseModel):
+    station_id: str
+    station_name: str
+    water_system: str
+    latitude: float
+    longitude: float
+    current_value: float | None = None
+    unit: str | None = None
+    measured_at: datetime | None = None
+    parameter: str
+    seasonal_percentile: float | None = None
+    seasonal_status: str
+    anomaly_score: int | None = None
+    anomaly_severity: str
+    anomaly_status: str
+    anomaly_direction: str | None = None
+    confidence: str
+    data_quality_status: str
+    freshness_status: str
+    delta_24h: float | None = None
+    primary_signal: OverviewPrimarySignalPayload | None = None
+
+
+class OverviewSummaryPayload(BaseModel):
+    stations_monitored: int
+    high_or_extreme_anomalies: int
+    extreme_anomalies: int
+    rapidly_rising: int
+    rapidly_falling: int
+    data_limited_or_stale: int
+
+
+class OverviewCoveragePayload(BaseModel):
+    historical_context_stations: int
+    insufficient_data_stations: int
+    stale_stations: int
+    rankable_stations: int
+
+
+class OverviewPayload(BaseModel):
+    generated_at: datetime
+    summary: OverviewSummaryPayload
+    coverage: OverviewCoveragePayload
+    stations: list[OverviewStationPayload]

@@ -13,9 +13,11 @@ from app.db.base import (
     MeasurementRecord,
     StationDailyStatisticRecord,
     StationHistoricalChangeStatisticRecord,
+    StationOverviewSnapshotRecord,
     StationRecord,
 )
 from app.domain.models import DailyStatistic, HistoricalChangeStatistic, Measurement, Station
+from app.domain.overview import OverviewPrimarySignal, OverviewStation
 
 _MEASUREMENT_UPSERT_BATCH_SIZE = 100
 
@@ -23,6 +25,9 @@ _MEASUREMENT_UPSERT_BATCH_SIZE = 100
 class WaterRepository:
     def __init__(self, db: Session) -> None:
         self._db = db
+
+    def commit(self) -> None:
+        self._db.commit()
 
     def upsert_station(self, station: Station) -> int:
         statement = (
@@ -254,6 +259,39 @@ class WaterRepository:
             for row in rows
         ]
 
+    def list_daily_statistics_for_stations(
+        self,
+        station_external_ids: list[str],
+        parameter: str,
+    ) -> dict[str, list[DailyStatistic]]:
+        if not station_external_ids:
+            return {}
+
+        rows = self._db.execute(
+            select(StationRecord.external_id, StationDailyStatisticRecord)
+            .join(
+                StationDailyStatisticRecord,
+                StationDailyStatisticRecord.station_id == StationRecord.id,
+            )
+            .where(StationRecord.external_id.in_(station_external_ids))
+            .where(StationDailyStatisticRecord.parameter == parameter)
+            .order_by(StationRecord.external_id, StationDailyStatisticRecord.date)
+        ).all()
+        grouped: dict[str, list[DailyStatistic]] = defaultdict(list)
+        for external_id, row in rows:
+            grouped[external_id].append(
+                DailyStatistic(
+                    date=row.date,
+                    value=row.median_value,
+                    min_value=row.min_value,
+                    max_value=row.max_value,
+                    mean_value=row.mean_value,
+                    median_value=row.median_value,
+                    observation_count=row.observation_count,
+                )
+            )
+        return grouped
+
     def list_historical_change_statistics(
         self,
         station_external_id: str,
@@ -280,6 +318,129 @@ class WaterRepository:
             )
             for row in rows
         ]
+
+    def list_historical_change_statistics_for_stations(
+        self,
+        station_external_ids: list[str],
+        parameter: str,
+        window_hours: int,
+    ) -> dict[str, list[HistoricalChangeStatistic]]:
+        if not station_external_ids:
+            return {}
+
+        rows = self._db.execute(
+            select(StationRecord.external_id, StationHistoricalChangeStatisticRecord)
+            .join(
+                StationHistoricalChangeStatisticRecord,
+                StationHistoricalChangeStatisticRecord.station_id == StationRecord.id,
+            )
+            .where(StationRecord.external_id.in_(station_external_ids))
+            .where(StationHistoricalChangeStatisticRecord.parameter == parameter)
+            .where(StationHistoricalChangeStatisticRecord.window_hours == window_hours)
+            .order_by(StationRecord.external_id, StationHistoricalChangeStatisticRecord.date)
+        ).all()
+        grouped: dict[str, list[HistoricalChangeStatistic]] = defaultdict(list)
+        for external_id, row in rows:
+            grouped[external_id].append(
+                HistoricalChangeStatistic(
+                    date=row.date,
+                    window_hours=row.window_hours,
+                    delta_value=row.delta_value,
+                    observation_count=row.observation_count,
+                )
+            )
+        return grouped
+
+    def upsert_overview_snapshots(
+        self,
+        *,
+        generated_at: datetime,
+        stations: list[OverviewStation],
+    ) -> int:
+        affected = 0
+        for station in stations:
+            station_record_id = self.get_station_record_id(station.station_id)
+            if station_record_id is None:
+                continue
+            statement = (
+                insert(StationOverviewSnapshotRecord)
+                .values(
+                    station_id=station_record_id,
+                    parameter=station.parameter,
+                    generated_at=generated_at,
+                    station_external_id=station.station_id,
+                    station_name=station.station_name,
+                    water_system=station.water_system,
+                    latitude=station.latitude,
+                    longitude=station.longitude,
+                    current_value=station.current_value,
+                    unit=station.unit,
+                    measured_at=station.measured_at,
+                    seasonal_percentile=station.seasonal_percentile,
+                    seasonal_status=station.seasonal_status,
+                    anomaly_score=station.anomaly_score,
+                    anomaly_severity=station.anomaly_severity,
+                    anomaly_status=station.anomaly_status,
+                    anomaly_direction=station.anomaly_direction,
+                    confidence=station.confidence,
+                    data_quality_status=station.data_quality_status,
+                    freshness_status=station.freshness_status,
+                    is_rankable=station.is_rankable,
+                    delta_24h=station.delta_24h,
+                    primary_signal=_primary_signal_dict(station.primary_signal),
+                    historical_years=station.historical_years,
+                    historical_sample_size=station.historical_sample_size,
+                    recent_measurement_count=station.recent_measurement_count,
+                )
+                .on_conflict_do_update(
+                    constraint="uq_station_overview_snapshots_station_parameter",
+                    set_={
+                        "generated_at": generated_at,
+                        "station_name": station.station_name,
+                        "water_system": station.water_system,
+                        "latitude": station.latitude,
+                        "longitude": station.longitude,
+                        "current_value": station.current_value,
+                        "unit": station.unit,
+                        "measured_at": station.measured_at,
+                        "seasonal_percentile": station.seasonal_percentile,
+                        "seasonal_status": station.seasonal_status,
+                        "anomaly_score": station.anomaly_score,
+                        "anomaly_severity": station.anomaly_severity,
+                        "anomaly_status": station.anomaly_status,
+                        "anomaly_direction": station.anomaly_direction,
+                        "confidence": station.confidence,
+                        "data_quality_status": station.data_quality_status,
+                        "freshness_status": station.freshness_status,
+                        "is_rankable": station.is_rankable,
+                        "delta_24h": station.delta_24h,
+                        "primary_signal": _primary_signal_dict(station.primary_signal),
+                        "historical_years": station.historical_years,
+                        "historical_sample_size": station.historical_sample_size,
+                        "recent_measurement_count": station.recent_measurement_count,
+                        "updated_at": datetime.now().astimezone(),
+                    },
+                )
+            )
+            result = self._db.execute(statement)
+            affected += result.rowcount or 0
+        return affected
+
+    def latest_overview_generated_at(self, parameter: str) -> datetime | None:
+        return self._db.scalar(
+            select(StationOverviewSnapshotRecord.generated_at)
+            .where(StationOverviewSnapshotRecord.parameter == parameter)
+            .order_by(StationOverviewSnapshotRecord.generated_at.desc())
+            .limit(1)
+        )
+
+    def list_overview_snapshots(self, parameter: str) -> list[OverviewStation]:
+        rows = self._db.scalars(
+            select(StationOverviewSnapshotRecord)
+            .where(StationOverviewSnapshotRecord.parameter == parameter)
+            .order_by(StationOverviewSnapshotRecord.station_external_id)
+        ).all()
+        return [_overview_station_from_record(row) for row in rows]
 
 
 def _merge_daily_source_metadata(
@@ -316,3 +477,62 @@ def _measurement_rows(
 def _chunks[T](values: list[T], size: int):
     for start in range(0, len(values), size):
         yield values[start : start + size]
+
+
+def _primary_signal_dict(signal: OverviewPrimarySignal | None) -> dict[str, object] | None:
+    if signal is None:
+        return None
+    return {
+        "type": signal.type,
+        "direction": signal.direction,
+        "value": signal.value,
+        "unit": signal.unit,
+        "percentile": signal.percentile,
+        "score": signal.score,
+        "message": signal.message,
+    }
+
+
+def _primary_signal_from_dict(value: dict[str, object] | None) -> OverviewPrimarySignal | None:
+    if value is None:
+        return None
+    return OverviewPrimarySignal(
+        type=str(value["type"]),
+        direction=value["direction"] if isinstance(value.get("direction"), str) else None,
+        value=value["value"] if isinstance(value.get("value"), int | float) else None,
+        unit=value["unit"] if isinstance(value.get("unit"), str) else None,
+        percentile=(
+            value["percentile"] if isinstance(value.get("percentile"), int | float) else None
+        ),
+        score=value["score"] if isinstance(value.get("score"), int) else None,
+        message=str(value["message"]),
+    )
+
+
+def _overview_station_from_record(row: StationOverviewSnapshotRecord) -> OverviewStation:
+    return OverviewStation(
+        station_id=row.station_external_id,
+        station_name=row.station_name,
+        water_system=row.water_system,
+        latitude=row.latitude,
+        longitude=row.longitude,
+        current_value=row.current_value,
+        unit=row.unit,
+        measured_at=row.measured_at,
+        parameter=row.parameter,
+        seasonal_percentile=row.seasonal_percentile,
+        seasonal_status=row.seasonal_status,
+        anomaly_score=row.anomaly_score,
+        anomaly_severity=row.anomaly_severity,
+        anomaly_status=row.anomaly_status,
+        anomaly_direction=row.anomaly_direction,
+        confidence=row.confidence,
+        data_quality_status=row.data_quality_status,
+        freshness_status=row.freshness_status,
+        is_rankable=row.is_rankable,
+        delta_24h=row.delta_24h,
+        primary_signal=_primary_signal_from_dict(row.primary_signal),
+        historical_years=row.historical_years,
+        historical_sample_size=row.historical_sample_size,
+        recent_measurement_count=row.recent_measurement_count,
+    )

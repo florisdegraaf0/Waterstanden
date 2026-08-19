@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 from geoalchemy2 import Geometry
-from sqlalchemy import Date, DateTime, ForeignKey, Index, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -132,6 +132,56 @@ class StationHistoricalChangeStatisticRecord(Base):
     delta_value: Mapped[float]
     observation_count: Mapped[int]
     source_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+        server_default=func.now(),
+    )
+
+
+class StationOverviewSnapshotRecord(Base):
+    __tablename__ = "station_overview_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "station_id",
+            "parameter",
+            name="uq_station_overview_snapshots_station_parameter",
+        ),
+        Index("ix_station_overview_snapshots_parameter_generated", "parameter", "generated_at"),
+        Index("ix_station_overview_snapshots_rank", "parameter", "is_rankable", "anomaly_score"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    station_id: Mapped[int] = mapped_column(ForeignKey("stations.id", ondelete="CASCADE"))
+    parameter: Mapped[str]
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    station_external_id: Mapped[str]
+    station_name: Mapped[str]
+    water_system: Mapped[str]
+    latitude: Mapped[float]
+    longitude: Mapped[float]
+    current_value: Mapped[float | None]
+    unit: Mapped[str | None]
+    measured_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    seasonal_percentile: Mapped[float | None]
+    seasonal_status: Mapped[str]
+    anomaly_score: Mapped[int | None]
+    anomaly_severity: Mapped[str]
+    anomaly_status: Mapped[str]
+    anomaly_direction: Mapped[str | None]
+    confidence: Mapped[str]
+    data_quality_status: Mapped[str]
+    freshness_status: Mapped[str]
+    is_rankable: Mapped[bool] = mapped_column(Boolean)
+    delta_24h: Mapped[float | None]
+    primary_signal: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    historical_years: Mapped[int]
+    historical_sample_size: Mapped[int]
+    recent_measurement_count: Mapped[int]
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), server_default=func.now()
     )
