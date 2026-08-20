@@ -415,28 +415,28 @@ async def test_anomaly_endpoint_returns_explainable_score(
         ) -> list[Measurement]:
             assert station_code == LOBITH_ID
             assert hours == 48
+            variation = [-0.02, 0.0, 0.02, 0.0]
             return [
-                Measurement(
-                    measured_at=RECENT_MEASURED_AT - timedelta(hours=1),
-                    value=9.0,
-                    unit="m NAP",
-                    parameter="water_level",
-                    quality_code="00",
-                ),
-                Measurement(
-                    measured_at=RECENT_MEASURED_AT,
-                    value=9.37,
-                    unit="m NAP",
-                    parameter="water_level",
-                    quality_code="00",
-                ),
-                Measurement(
-                    measured_at=RECENT_MEASURED_AT - timedelta(hours=24),
-                    value=8.74,
-                    unit="m NAP",
-                    parameter="water_level",
-                    quality_code="00",
-                ),
+                *[
+                    Measurement(
+                        measured_at=RECENT_MEASURED_AT - timedelta(hours=48 - index),
+                        value=8.74 + variation[index % len(variation)],
+                        unit="m NAP",
+                        parameter="water_level",
+                        quality_code="00",
+                    )
+                    for index in range(24)
+                ],
+                *[
+                    Measurement(
+                        measured_at=RECENT_MEASURED_AT - timedelta(hours=23 - index),
+                        value=9.37 + variation[index % len(variation)],
+                        unit="m NAP",
+                        parameter="water_level",
+                        quality_code="00",
+                    )
+                    for index in range(24)
+                ],
             ]
 
     async def anomaly_rws_client():

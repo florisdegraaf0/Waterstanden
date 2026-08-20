@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     seasonal_min_sample_size: int = 150
     seasonal_min_years: int = 10
     anomaly_delta_tolerance_minutes: int = 45
+    anomaly_delta_min_window_observations: int = 12
+    anomaly_delta_max_window_gap_minutes: int = 180
     anomaly_recent_window_hours: int = 48
     anomaly_stale_after_minutes: int = 180
     overview_cache_ttl_minutes: int = 15

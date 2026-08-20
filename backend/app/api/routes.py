@@ -122,6 +122,8 @@ async def get_overview(
         anomaly_config=AnomalyConfig(
             seasonal_window_days=settings.seasonal_window_days,
             delta_tolerance_minutes=settings.anomaly_delta_tolerance_minutes,
+            delta_min_window_observations=settings.anomaly_delta_min_window_observations,
+            delta_max_window_gap_minutes=settings.anomaly_delta_max_window_gap_minutes,
             recent_window_hours=settings.anomaly_recent_window_hours,
             stale_after_minutes=settings.anomaly_stale_after_minutes,
         ),
@@ -290,6 +292,8 @@ async def get_station_anomaly(
         anomaly_config=AnomalyConfig(
             seasonal_window_days=settings.seasonal_window_days,
             delta_tolerance_minutes=settings.anomaly_delta_tolerance_minutes,
+            delta_min_window_observations=settings.anomaly_delta_min_window_observations,
+            delta_max_window_gap_minutes=settings.anomaly_delta_max_window_gap_minutes,
             recent_window_hours=settings.anomaly_recent_window_hours,
             stale_after_minutes=settings.anomaly_stale_after_minutes,
         ),

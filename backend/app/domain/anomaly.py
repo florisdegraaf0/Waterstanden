@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from statistics import median
+from statistics import mean, median
 
 from app.domain.models import (
     AnomalyDataQuality,
@@ -27,6 +27,8 @@ DELTA_HIGH_CONFIDENCE_YEARS = 10
 class AnomalyConfig:
     seasonal_window_days: int = 14
     delta_tolerance_minutes: int = 45
+    delta_min_window_observations: int = 12
+    delta_max_window_gap_minutes: int = 180
     recent_window_hours: int = 48
     stale_after_minutes: int = 180
 
@@ -57,19 +59,42 @@ def calculate_recent_features(
     config: AnomalyConfig,
     parameter: str = "water_level",
 ) -> RecentFeatures:
+    by_timestamp = {
+        measurement.measured_at: measurement
+        for measurement in recent_measurements
+        if measurement.parameter == parameter
+    }
+    if current.parameter == parameter:
+        by_timestamp[current.measured_at] = current
     measurements = sorted(
-        (measurement for measurement in recent_measurements if measurement.parameter == parameter),
+        by_timestamp.values(),
         key=lambda measurement: measurement.measured_at,
     )
-    target = current.measured_at - timedelta(hours=DELTA_WINDOW_HOURS)
-    comparison = _nearest_measurement(
+    current_window_start = current.measured_at - timedelta(hours=DELTA_WINDOW_HOURS)
+    previous_window_start = current.measured_at - timedelta(hours=DELTA_WINDOW_HOURS * 2)
+    current_mean = _window_mean(
         measurements,
-        target=target,
-        tolerance=timedelta(minutes=config.delta_tolerance_minutes),
+        start=current_window_start,
+        end=current.measured_at,
+        include_end=True,
+        min_observations=config.delta_min_window_observations,
+        max_gap_minutes=config.delta_max_window_gap_minutes,
+    )
+    previous_mean = _window_mean(
+        measurements,
+        start=previous_window_start,
+        end=current_window_start,
+        include_end=False,
+        min_observations=config.delta_min_window_observations,
+        max_gap_minutes=config.delta_max_window_gap_minutes,
     )
     return RecentFeatures(
         current_level=current.value,
-        delta_24h=current.value - comparison.value if comparison is not None else None,
+        delta_24h=(
+            current_mean - previous_mean
+            if current_mean is not None and previous_mean is not None
+            else None
+        ),
         latest_measurement_age_minutes=max(
             (evaluated_at - current.measured_at).total_seconds() / 60,
             0,
@@ -77,6 +102,29 @@ def calculate_recent_features(
         recent_observation_count=len(measurements),
         largest_recent_gap_minutes=_largest_gap_minutes(measurements),
     )
+
+
+def _window_mean(
+    measurements: list[Measurement],
+    *,
+    start: datetime,
+    end: datetime,
+    include_end: bool,
+    min_observations: int,
+    max_gap_minutes: int,
+) -> float | None:
+    window = [
+        measurement
+        for measurement in measurements
+        if measurement.measured_at >= start
+        and (measurement.measured_at <= end if include_end else measurement.measured_at < end)
+    ]
+    if len(window) < min_observations:
+        return None
+    largest_gap = _largest_gap_minutes(window)
+    if largest_gap is not None and largest_gap > max_gap_minutes:
+        return None
+    return mean(measurement.value for measurement in window)
 
 
 def calculate_change_reference(

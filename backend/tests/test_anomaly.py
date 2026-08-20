@@ -48,32 +48,40 @@ def test_severity_thresholds(score: int, severity: str) -> None:
     assert severity_for_score(score) == severity
 
 
-def test_24h_delta_uses_nearest_observation_within_tolerance_and_prefers_earlier_tie() -> None:
+def test_24h_delta_uses_window_means_to_avoid_tidal_point_mismatch() -> None:
     current_at = datetime(2026, 8, 18, 10, 0, tzinfo=UTC)
+    cycle = [0.0, 1.0, 0.0, -1.0] * 3
     features = calculate_recent_features(
-        current=measurement(current_at, 9.37),
+        current=measurement(current_at, cycle[-1]),
         recent_measurements=[
-            measurement(current_at - timedelta(hours=24, minutes=30), 8.80),
-            measurement(current_at - timedelta(hours=23, minutes=30), 8.90),
-            measurement(current_at, 9.37),
+            *[
+                measurement(current_at - timedelta(hours=48 - index * 2), value)
+                for index, value in enumerate(cycle)
+            ],
+            *[
+                measurement(current_at - timedelta(hours=22 - index * 2), value)
+                for index, value in enumerate(cycle)
+            ],
         ],
         evaluated_at=current_at,
-        config=AnomalyConfig(delta_tolerance_minutes=45),
+        config=AnomalyConfig(),
     )
 
-    assert features.delta_24h == pytest.approx(0.57)
+    assert features.delta_24h == pytest.approx(0.0)
 
 
-def test_24h_delta_is_missing_without_nearby_observation() -> None:
+def test_24h_delta_is_missing_without_enough_window_coverage() -> None:
     current_at = datetime(2026, 8, 18, 10, 0, tzinfo=UTC)
     features = calculate_recent_features(
         current=measurement(current_at, 9.37),
         recent_measurements=[
-            measurement(current_at - timedelta(hours=22), 8.80),
+            measurement(current_at - timedelta(hours=30), 8.80),
+            measurement(current_at - timedelta(hours=28), 8.90),
+            measurement(current_at - timedelta(hours=2), 9.30),
             measurement(current_at, 9.37),
         ],
         evaluated_at=current_at,
-        config=AnomalyConfig(delta_tolerance_minutes=45),
+        config=AnomalyConfig(),
     )
 
     assert features.delta_24h is None
