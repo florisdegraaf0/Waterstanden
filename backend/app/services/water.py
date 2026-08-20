@@ -64,6 +64,8 @@ class WaterService:
                         **observation.raw_metadata,
                         "rws_name": observation.name,
                         "water_system": curated.water_system,
+                        "station_group": curated.station_group,
+                        "station_group_label": curated.station_group_label,
                         "significance": curated.significance,
                         "sort_order": curated.sort_order,
                     },

@@ -8,6 +8,7 @@ from app.api import routes
 from app.api.dependencies import get_db, get_rws_client
 from app.clients.rws.models import RwsLatestObservation
 from app.domain.models import DailyStatistic, Measurement
+from app.domain.overview import OverviewPrimarySignal, OverviewResult, OverviewStation
 from app.main import app
 
 RECENT_MEASURED_AT = datetime.now(UTC).replace(microsecond=0)
@@ -88,8 +89,90 @@ async def test_stations_endpoint_returns_normalized_stations() -> None:
             "parameter": "water_level",
             "status": "Ongecontroleerd",
             "quality_code": "00",
+            "water_system": "Rhine",
+            "station_group": "rhine",
+            "station_group_label": "Rhine",
+            "significance": "Total Rhine inflow entering the Netherlands",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_map_stations_endpoint_returns_group_and_anomaly_summary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    signal = OverviewPrimarySignal(
+        type="seasonal_level",
+        direction="high",
+        value=9.37,
+        unit="m NAP",
+        percentile=97,
+        score=94,
+        message="Water level is unusually high.",
+    )
+    snapshot = OverviewStation(
+        station_id=LOBITH_ID,
+        station_name="Lobith",
+        water_system="Rhine",
+        latitude=51.854205,
+        longitude=6.091178,
+        current_value=9.37,
+        unit="m NAP",
+        measured_at=RECENT_MEASURED_AT,
+        parameter="water_level",
+        seasonal_percentile=97,
+        seasonal_status="extremely_high",
+        anomaly_score=94,
+        anomaly_severity="high",
+        anomaly_status="ok",
+        anomaly_direction="high",
+        confidence="high",
+        data_quality_status="normal",
+        freshness_status="current",
+        is_rankable=True,
+        delta_24h=0.63,
+        primary_signal=signal,
+        historical_years=10,
+        historical_sample_size=150,
+        recent_measurement_count=48,
+    )
+
+    class FakeRepository:
+        def __init__(self, _db: object) -> None:
+            pass
+
+        def list_overview_snapshots(self, parameter: str):
+            assert parameter == "water_level"
+            return [snapshot]
+
+    class FakeOverviewService:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        async def get_overview(self, **_kwargs):
+            return OverviewResult(
+                generated_at=RECENT_MEASURED_AT,
+                summary=object(),
+                coverage=object(),
+                stations=[snapshot],
+            )
+
+    monkeypatch.setattr(routes, "WaterRepository", FakeRepository)
+    monkeypatch.setattr(routes, "OverviewService", FakeOverviewService)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/map-stations")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload[0]["station_group"] == "rhine"
+    assert payload[0]["significance"] == "Total Rhine inflow entering the Netherlands"
+    assert payload[0]["anomaly_score"] == 94
+    assert payload[0]["anomaly_severity"] == "high"
+    assert payload[0]["seasonal_percentile"] == 97
+    assert payload[0]["primary_signal"]["direction"] == "high"
 
 
 @pytest.mark.asyncio

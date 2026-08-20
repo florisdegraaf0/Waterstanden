@@ -46,7 +46,12 @@ export function StationPanel({
       <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
         <div>
           <h2 className="text-lg font-semibold text-ink">{station.name}</h2>
-          <p className="mt-1 text-sm text-slate-500">{station.id}</p>
+          <p className="mt-1 text-sm text-slate-500">
+            {[station.water_system, station.station_group_label].filter(Boolean).join(" · ")}
+          </p>
+          {station.significance ? (
+            <p className="mt-3 text-sm leading-6 text-slate-600">{station.significance}</p>
+          ) : null}
         </div>
         <button
           aria-label="Close station panel"
@@ -71,22 +76,10 @@ export function StationPanel({
           </div>
         </div>
 
-        <dl className="grid grid-cols-2 gap-3 text-sm">
+        <dl className="grid grid-cols-1 gap-3 text-sm">
           <div>
             <dt className="text-slate-500">Measured</dt>
             <dd className="mt-1 font-medium text-ink">{measuredAt}</dd>
-          </div>
-          <div>
-            <dt className="text-slate-500">Status</dt>
-            <dd className="mt-1 font-medium text-ink">{station.status ?? "Unknown"}</dd>
-          </div>
-          <div>
-            <dt className="text-slate-500">Latitude</dt>
-            <dd className="mt-1 font-medium text-ink">{station.latitude.toFixed(5)}</dd>
-          </div>
-          <div>
-            <dt className="text-slate-500">Longitude</dt>
-            <dd className="mt-1 font-medium text-ink">{station.longitude.toFixed(5)}</dd>
           </div>
         </dl>
 

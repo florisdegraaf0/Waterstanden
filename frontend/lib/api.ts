@@ -11,6 +11,10 @@ export type Station = {
   parameter: string;
   status: string | null;
   quality_code: string | null;
+  water_system: string | null;
+  station_group: string | null;
+  station_group_label: string | null;
+  significance: string | null;
   metadata?: Record<string, string | number | null>;
 };
 
@@ -146,6 +150,20 @@ export type OverviewStation = {
   primary_signal: OverviewPrimarySignal | null;
 };
 
+export type MapStation = Station & {
+  seasonal_percentile: number | null;
+  seasonal_status: SeasonalStatus | null;
+  anomaly_score: number | null;
+  anomaly_severity: StationAnomaly["anomaly"]["severity"];
+  anomaly_status: StationAnomaly["anomaly"]["status"] | null;
+  anomaly_direction: string | null;
+  confidence: StationAnomaly["anomaly"]["confidence"] | null;
+  data_quality_status: StationAnomaly["data_quality"]["status"] | null;
+  freshness_status: "current" | "stale" | null;
+  delta_24h: number | null;
+  primary_signal: OverviewPrimarySignal | null;
+};
+
 export type Overview = {
   generated_at: string;
   summary: {
@@ -194,6 +212,10 @@ async function fetchJson<T>(path: string): Promise<T> {
 
 export function fetchStations(): Promise<Station[]> {
   return fetchJson<Station[]>("/api/stations");
+}
+
+export function fetchMapStations(): Promise<MapStation[]> {
+  return fetchJson<MapStation[]>("/api/map-stations");
 }
 
 export function fetchStation(stationId: string): Promise<Station> {

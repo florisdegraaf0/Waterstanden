@@ -14,6 +14,10 @@ class StationSummary(BaseModel):
     parameter: str
     status: str | None = None
     quality_code: str | None = None
+    water_system: str | None = None
+    station_group: str | None = None
+    station_group_label: str | None = None
+    significance: str | None = None
 
 
 class StationDetail(StationSummary):
@@ -133,6 +137,20 @@ class OverviewStationPayload(BaseModel):
     confidence: str
     data_quality_status: str
     freshness_status: str
+    delta_24h: float | None = None
+    primary_signal: OverviewPrimarySignalPayload | None = None
+
+
+class MapStationPayload(StationSummary):
+    seasonal_percentile: float | None = None
+    seasonal_status: str | None = None
+    anomaly_score: int | None = None
+    anomaly_severity: str = "normal"
+    anomaly_status: str | None = None
+    anomaly_direction: str | None = None
+    confidence: str | None = None
+    data_quality_status: str | None = None
+    freshness_status: str | None = None
     delta_24h: float | None = None
     primary_signal: OverviewPrimarySignalPayload | None = None
 

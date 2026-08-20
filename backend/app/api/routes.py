@@ -2,13 +2,14 @@ from datetime import datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_app_settings, get_db, get_rws_client
 from app.clients.rws.client import RwsClient
 from app.config import Settings
 from app.domain.anomaly import AnomalyConfig
-from app.domain.curated_stations import CURATED_STATION_IDS
+from app.domain.curated_stations import CURATED_STATION_BY_ID, CURATED_STATION_IDS
 from app.domain.seasonal import SeasonalConfig
 from app.exceptions import StationNotFound
 from app.repositories.water import WaterRepository
@@ -17,6 +18,7 @@ from app.schemas.stations import (
     AnomalyResultPayload,
     AnomalySignalPayload,
     CurrentMeasurement,
+    MapStationPayload,
     MeasurementPoint,
     OverviewCoveragePayload,
     OverviewPayload,
@@ -55,7 +57,55 @@ async def list_stations(
         active_station_recent_check_concurrency=settings.active_station_recent_check_concurrency,
         active_station_verify_recent_measurements=settings.active_station_verify_recent_measurements,
     )
-    return await service.list_stations()
+    return [_station_summary_payload(station) for station in await service.list_stations()]
+
+
+@router.get("/map-stations", response_model=list[MapStationPayload])
+async def list_map_stations(
+    rws_client: Annotated[RwsClient, Depends(get_rws_client)],
+    settings: Annotated[Settings, Depends(get_app_settings)],
+    db: Annotated[Session, Depends(get_db)],
+    parameter: str = "water_level",
+):
+    repository = WaterRepository(db)
+    water_service = WaterService(
+        rws_client,
+        use_fallback_measurements=False,
+        active_station_max_age_hours=settings.active_station_max_age_hours,
+        active_station_recent_check_concurrency=settings.active_station_recent_check_concurrency,
+        active_station_verify_recent_measurements=settings.active_station_verify_recent_measurements,
+    )
+    stations = await water_service.list_stations()
+    overview_service = OverviewService(
+        water_service=water_service,
+        repository=repository,
+        seasonal_config=SeasonalConfig(
+            window_days=settings.seasonal_window_days,
+            min_sample_size=settings.seasonal_min_sample_size,
+            min_years=settings.seasonal_min_years,
+        ),
+        anomaly_config=AnomalyConfig(
+            seasonal_window_days=settings.seasonal_window_days,
+            delta_tolerance_minutes=settings.anomaly_delta_tolerance_minutes,
+            recent_window_hours=settings.anomaly_recent_window_hours,
+            stale_after_minutes=settings.anomaly_stale_after_minutes,
+        ),
+        cache_ttl=timedelta(minutes=settings.overview_cache_ttl_minutes),
+        recent_measurement_concurrency=settings.active_station_recent_check_concurrency,
+    )
+    await overview_service.get_overview(parameter=parameter, limit=200)
+    try:
+        snapshots = {
+            station.station_id: station
+            for station in repository.list_overview_snapshots(parameter)
+        }
+    except SQLAlchemyError:
+        repository.rollback()
+        snapshots = {}
+    return [
+        _map_station_payload(station, snapshots.get(station.id))
+        for station in stations
+    ]
 
 
 @router.get("/overview", response_model=OverviewPayload)
@@ -135,7 +185,11 @@ async def get_station(
         active_station_recent_check_concurrency=settings.active_station_recent_check_concurrency,
         active_station_verify_recent_measurements=settings.active_station_verify_recent_measurements,
     )
-    return await service.get_station(station_id)
+    station = await service.get_station(station_id)
+    return StationDetail(
+        **_station_summary_payload(station).model_dump(),
+        metadata=station.metadata,
+    )
 
 
 @router.get("/stations/{station_id}/measurements", response_model=list[MeasurementPoint])
@@ -300,6 +354,75 @@ def _anomaly_signal_payload(signal) -> AnomalySignalPayload:
         percentile=signal.percentile,
         message=signal.message,
     )
+
+
+def _station_summary_payload(station) -> StationSummary:
+    curated = CURATED_STATION_BY_ID.get(station.id)
+    return StationSummary(
+        id=station.id,
+        name=station.name,
+        latitude=station.latitude,
+        longitude=station.longitude,
+        latest_value=station.latest_value,
+        unit=station.unit,
+        measured_at=station.measured_at,
+        parameter=station.parameter,
+        status=station.status,
+        quality_code=station.quality_code,
+        water_system=(
+            curated.water_system if curated else _metadata_string(station.metadata, "water_system")
+        ),
+        station_group=(
+            curated.station_group
+            if curated
+            else _metadata_string(station.metadata, "station_group")
+        ),
+        station_group_label=(
+            curated.station_group_label
+            if curated
+            else _metadata_string(station.metadata, "station_group_label")
+        ),
+        significance=(
+            curated.significance if curated else _metadata_string(station.metadata, "significance")
+        ),
+    )
+
+
+def _map_station_payload(station, overview_station) -> MapStationPayload:
+    base = _station_summary_payload(station).model_dump()
+    if overview_station is None:
+        return MapStationPayload(**base)
+    return MapStationPayload(
+        **base,
+        seasonal_percentile=overview_station.seasonal_percentile,
+        seasonal_status=overview_station.seasonal_status,
+        anomaly_score=overview_station.anomaly_score,
+        anomaly_severity=overview_station.anomaly_severity,
+        anomaly_status=overview_station.anomaly_status,
+        anomaly_direction=overview_station.anomaly_direction,
+        confidence=overview_station.confidence,
+        data_quality_status=overview_station.data_quality_status,
+        freshness_status=overview_station.freshness_status,
+        delta_24h=overview_station.delta_24h,
+        primary_signal=(
+            OverviewPrimarySignalPayload(
+                type=overview_station.primary_signal.type,
+                direction=overview_station.primary_signal.direction,
+                value=overview_station.primary_signal.value,
+                unit=overview_station.primary_signal.unit,
+                percentile=overview_station.primary_signal.percentile,
+                score=overview_station.primary_signal.score,
+                message=overview_station.primary_signal.message,
+            )
+            if overview_station.primary_signal
+            else None
+        ),
+    )
+
+
+def _metadata_string(metadata: dict, key: str) -> str | None:
+    value = metadata.get(key)
+    return value if isinstance(value, str) else None
 
 
 def _overview_station_payload(station) -> OverviewStationPayload:
