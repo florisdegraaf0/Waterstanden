@@ -29,6 +29,9 @@ class WaterRepository:
     def commit(self) -> None:
         self._db.commit()
 
+    def rollback(self) -> None:
+        self._db.rollback()
+
     def upsert_station(self, station: Station) -> int:
         statement = (
             insert(StationRecord)
@@ -359,13 +362,10 @@ class WaterRepository:
     ) -> int:
         affected = 0
         for station in stations:
-            station_record_id = self.get_station_record_id(station.station_id)
-            if station_record_id is None:
-                continue
             statement = (
                 insert(StationOverviewSnapshotRecord)
                 .values(
-                    station_id=station_record_id,
+                    station_id=None,
                     parameter=station.parameter,
                     generated_at=generated_at,
                     station_external_id=station.station_id,
@@ -393,9 +393,10 @@ class WaterRepository:
                     recent_measurement_count=station.recent_measurement_count,
                 )
                 .on_conflict_do_update(
-                    constraint="uq_station_overview_snapshots_station_parameter",
+                    constraint="uq_station_overview_snapshots_external_id_parameter",
                     set_={
                         "generated_at": generated_at,
+                        "station_id": None,
                         "station_name": station.station_name,
                         "water_system": station.water_system,
                         "latitude": station.latitude,

@@ -6,6 +6,8 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from statistics import mean
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.domain.anomaly import (
     DELTA_WINDOW_HOURS,
     AnomalyConfig,
@@ -77,12 +79,48 @@ class OverviewService:
         if sort not in OVERVIEW_SORTS:
             sort = "anomaly_score"
 
-        generated_at = self._repository.latest_overview_generated_at(parameter)
+        try:
+            generated_at = self._repository.latest_overview_generated_at(parameter)
+        except SQLAlchemyError as exc:
+            logger.warning(
+                "Overview cache timestamp query failed",
+                extra={"parameter": parameter},
+                exc_info=exc,
+            )
+            self._repository.rollback()
+            return _build_overview_result(
+                generated_at=datetime.now(UTC),
+                stations=[],
+                overview_filter=overview_filter,
+                sort=sort,
+                limit=limit,
+            )
+
         now = datetime.now(UTC)
         if generated_at is None or generated_at < now - self._cache_ttl:
-            generated_at = await self.refresh(parameter=parameter, generated_at=now)
+            try:
+                generated_at = await self.refresh(parameter=parameter, generated_at=now)
+            except (ExternalServiceError, SQLAlchemyError) as exc:
+                logger.warning(
+                    "Overview refresh failed",
+                    extra={"parameter": parameter},
+                    exc_info=exc,
+                )
+                self._repository.rollback()
 
-        snapshots = self._repository.list_overview_snapshots(parameter)
+        try:
+            snapshots = self._repository.list_overview_snapshots(parameter)
+        except SQLAlchemyError as exc:
+            logger.warning(
+                "Overview snapshot query failed",
+                extra={"parameter": parameter},
+                exc_info=exc,
+            )
+            self._repository.rollback()
+            snapshots = []
+
+        if generated_at is None:
+            generated_at = now
         return _build_overview_result(
             generated_at=generated_at,
             stations=snapshots,
@@ -93,9 +131,6 @@ class OverviewService:
 
     async def refresh(self, *, parameter: str = "water_level", generated_at: datetime) -> datetime:
         active_stations = await self._water_service.list_stations()
-        for station in active_stations:
-            self._repository.upsert_station(station)
-
         station_ids = [station.id for station in active_stations]
         daily_statistics = self._repository.list_daily_statistics_for_stations(
             station_ids,

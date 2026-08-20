@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -13,7 +13,7 @@ from app.domain.overview import (
     OverviewSummary,
 )
 from app.main import app
-from app.services.overview import _build_overview_result
+from app.services.overview import OverviewService, _build_overview_result
 
 GENERATED_AT = datetime(2026, 8, 19, 13, 30, tzinfo=UTC)
 
@@ -161,6 +161,52 @@ def test_overview_filters_rapid_movement() -> None:
     ]
     assert result.summary.rapidly_rising == 1
     assert result.summary.rapidly_falling == 1
+
+
+@pytest.mark.asyncio
+async def test_overview_returns_cached_snapshots_when_refresh_fails() -> None:
+    cached_station = overview_station(
+        "lobith.bovenrijn.tolkamer",
+        score=94,
+        seasonal_percentile=97,
+        severity="high",
+    )
+
+    class FailingWaterService:
+        async def list_stations(self):
+            from sqlalchemy.exc import OperationalError
+
+            raise OperationalError("select 1", {}, Exception("statement timeout"))
+
+    class FakeRepository:
+        def __init__(self) -> None:
+            self.rolled_back = False
+
+        def latest_overview_generated_at(self, parameter: str):
+            assert parameter == "water_level"
+            return datetime(2026, 8, 19, 13, 0, tzinfo=UTC)
+
+        def list_overview_snapshots(self, parameter: str):
+            assert parameter == "water_level"
+            return [cached_station]
+
+        def rollback(self) -> None:
+            self.rolled_back = True
+
+    repository = FakeRepository()
+    service = OverviewService(
+        water_service=FailingWaterService(),
+        repository=repository,
+        seasonal_config=object(),
+        anomaly_config=object(),
+        cache_ttl=timedelta(minutes=0),
+        recent_measurement_concurrency=1,
+    )
+
+    result = await service.get_overview()
+
+    assert repository.rolled_back is True
+    assert result.stations == [cached_station]
 
 
 class FakeRwsClient:

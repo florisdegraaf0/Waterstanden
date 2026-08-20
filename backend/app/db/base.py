@@ -147,16 +147,16 @@ class StationOverviewSnapshotRecord(Base):
     __tablename__ = "station_overview_snapshots"
     __table_args__ = (
         UniqueConstraint(
-            "station_id",
+            "station_external_id",
             "parameter",
-            name="uq_station_overview_snapshots_station_parameter",
+            name="uq_station_overview_snapshots_external_id_parameter",
         ),
         Index("ix_station_overview_snapshots_parameter_generated", "parameter", "generated_at"),
         Index("ix_station_overview_snapshots_rank", "parameter", "is_rankable", "anomaly_score"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    station_id: Mapped[int] = mapped_column(ForeignKey("stations.id", ondelete="CASCADE"))
+    station_id: Mapped[int | None] = mapped_column(ForeignKey("stations.id", ondelete="SET NULL"))
     parameter: Mapped[str]
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     station_external_id: Mapped[str]
