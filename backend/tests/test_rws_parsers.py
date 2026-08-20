@@ -48,6 +48,64 @@ def test_parse_recent_observations_response() -> None:
     assert measurements[0].quality_code == "00"
 
 
+def test_parse_discharge_observations_response() -> None:
+    payload = {
+        "WaarnemingenLijst": [
+            {
+                "Locatie": {
+                    "Naam": "Lobith, Bovenrijn, Tolkamer",
+                    "Code": "lobith.bovenrijn.tolkamer",
+                },
+                "AquoMetadata": {
+                    "Compartiment": {"Code": "OW"},
+                    "Eenheid": {"Code": "m3/s"},
+                    "Grootheid": {"Code": "Q"},
+                    "Hoedanigheid": {"Code": "NVT"},
+                    "MeetApparaat": {"Code": "8000"},
+                    "ProcesType": "meting",
+                    "WaardeBepalingsmethode": {"Code": "other:F230"},
+                    "WaardeBewerkingsmethode": {"Code": "NVT"},
+                },
+                "MetingenLijst": [
+                    {
+                        "Tijdstip": "2026-08-20T15:00:00.000Z",
+                        "Meetwaarde": {"Waarde_Numeriek": 612.17},
+                        "WaarnemingMetadata": {
+                            "Kwaliteitswaardecode": {"Code": "00"},
+                        },
+                    }
+                ],
+            }
+        ]
+    }
+
+    measurements = parse_observations_response(payload)
+
+    assert len(measurements) == 1
+    assert measurements[0].parameter == "discharge"
+    assert measurements[0].value == pytest.approx(612.17)
+    assert measurements[0].unit == "m3/s"
+    assert measurements[0].source_metadata["grootheid"] == "Q"
+
+
+def test_unknown_rws_parameter_is_rejected() -> None:
+    payload = {
+        "WaarnemingenLijst": [
+            {
+                "AquoMetadata": {
+                    "Compartiment": {"Code": "OW"},
+                    "Eenheid": {"Code": "m3/s"},
+                    "Grootheid": {"Code": "NOT_Q"},
+                },
+                "MetingenLijst": [],
+            }
+        ]
+    }
+
+    with pytest.raises(ExternalDataError):
+        parse_observations_response(payload)
+
+
 def test_parse_historical_observations_preserves_source_metadata() -> None:
     payload = {
         "WaarnemingenLijst": [

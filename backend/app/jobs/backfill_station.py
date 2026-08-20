@@ -12,6 +12,7 @@ from app.clients.rws.parsers import normalize_latest_water_level
 from app.config import get_settings
 from app.domain.curated_stations import CURATED_STATION_BY_ID, CURATED_STATIONS
 from app.domain.models import DailyStatistic, HistoricalChangeStatistic, Measurement, Station
+from app.domain.parameters import validate_parameter
 from app.services.water import WaterService
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ async def run_backfill(
     start_date: date,
     end_date: date,
 ) -> None:
+    parameter = validate_parameter(parameter)
     settings = get_settings()
     client = RwsClient(settings)
     try:
@@ -50,13 +52,21 @@ async def run_backfill(
                     station_id,
                     datetime.combine(chunk_start, time.min, tzinfo=UTC),
                     datetime.combine(chunk_end + timedelta(days=1), time.min, tzinfo=UTC),
+                    parameter=parameter,
                 )
                 measurements = [
                     measurement
                     for measurement in measurements
                     if measurement.parameter == parameter
-                    and _is_selected_lobith_series(measurement.source_metadata or {})
+                    and _is_selected_historical_series(
+                        parameter,
+                        measurement.source_metadata or {},
+                    )
                 ]
+                raw_count = repository.upsert_measurements(
+                    station_record_id,
+                    measurements,
+                )
                 daily_statistics = _daily_statistics_from_measurements(measurements)
                 daily_count = repository.upsert_daily_statistics(
                     station_record_id=station_record_id,
@@ -77,6 +87,7 @@ async def run_backfill(
                     extra={
                         "station_id": station_id,
                         "measurements_seen": len(measurements),
+                        "raw_measurements": raw_count,
                         "daily_statistics": daily_count,
                         "change_statistics": change_count,
                     },
@@ -161,8 +172,21 @@ def _year_chunks(start_date: date, end_date: date) -> list[tuple[date, date]]:
 
 
 def _is_selected_lobith_series(source_metadata: dict[str, object]) -> bool:
+    return _is_selected_historical_series("water_level", source_metadata)
+
+
+def _is_selected_historical_series(
+    parameter: str,
+    source_metadata: dict[str, object],
+) -> bool:
     if source_metadata.get("station_code") != "lobith.bovenrijn.tolkamer":
         return True
+    if parameter == "discharge":
+        return (
+            source_metadata.get("unit") == "m3/s"
+            and source_metadata.get("grootheid") == "Q"
+            and source_metadata.get("proces_type") == "meting"
+        )
     return (
         source_metadata.get("hoedanigheid") == "NAP"
         and source_metadata.get("proces_type") == "meting"

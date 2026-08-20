@@ -3,10 +3,12 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from app.clients.rws.client import RwsClient
-from app.clients.rws.parsers import normalize_latest_water_level
+from app.clients.rws.models import RwsLatestObservation
+from app.clients.rws.parsers import normalize_latest_observation, normalize_latest_water_level
 from app.domain.curated_stations import CURATED_STATION_BY_ID, CURATED_STATION_IDS
 from app.domain.models import Measurement, Station
-from app.exceptions import ExternalServiceError, StationNotFound
+from app.domain.parameters import SUPPORTED_PARAMETERS, MeasurementParameter, validate_parameter
+from app.exceptions import ExternalDataError, ExternalServiceError, StationNotFound
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +31,13 @@ class WaterService:
         self._now = now
 
     async def list_stations(self) -> list[Station]:
-        observations = await self._rws_client.fetch_latest_water_level_locations()
+        observations_by_parameter = await self._latest_observations_by_parameter()
         candidates: list[Station] = []
         seen: set[str] = set()
         now = self._now or datetime.now(UTC)
         cutoff = now - self._active_station_max_age
 
-        for observation in observations:
+        for observation in observations_by_parameter["water_level"].values():
             curated = CURATED_STATION_BY_ID.get(observation.code)
             if curated is None:
                 continue
@@ -46,6 +48,24 @@ class WaterService:
                 continue
             if latest.measured_at < cutoff:
                 continue
+
+            parameters = {"water_level": latest}
+            discharge_observation = observations_by_parameter["discharge"].get(observation.code)
+            if discharge_observation is not None:
+                try:
+                    discharge = normalize_latest_observation(discharge_observation)
+                except ExternalDataError:
+                    logger.warning(
+                        "Skipping invalid latest discharge observation",
+                        extra={"station_id": observation.code},
+                    )
+                else:
+                    if (
+                        discharge is not None
+                        and discharge.parameter == "discharge"
+                        and discharge.measured_at >= cutoff
+                    ):
+                        parameters["discharge"] = discharge
 
             seen.add(observation.code)
             candidates.append(
@@ -69,6 +89,8 @@ class WaterService:
                         "significance": curated.significance,
                         "sort_order": curated.sort_order,
                     },
+                    available_parameters=tuple(parameters),
+                    parameters=parameters,
                 )
             )
 
@@ -88,14 +110,37 @@ class WaterService:
                 return station
         raise StationNotFound(f"Station {station_id!r} was not found")
 
-    async def get_measurements(self, station_id: str, hours: int) -> list[Measurement]:
+    async def get_measurements(
+        self,
+        station_id: str,
+        hours: int,
+        parameter: str = "water_level",
+    ) -> list[Measurement]:
+        parameter = validate_parameter(parameter)
         if station_id not in CURATED_STATION_IDS:
             raise StationNotFound(f"Station {station_id!r} was not found")
 
         try:
-            measurements = await self._rws_client.fetch_recent_measurements(station_id, hours)
+            if parameter == "water_level":
+                try:
+                    measurements = await self._rws_client.fetch_recent_measurements(
+                        station_id,
+                        hours,
+                        parameter=parameter,
+                    )
+                except TypeError:
+                    measurements = await self._rws_client.fetch_recent_measurements(
+                        station_id,
+                        hours,
+                    )
+            else:
+                measurements = await self._rws_client.fetch_recent_measurements(
+                    station_id,
+                    hours,
+                    parameter=parameter,
+                )
         except ExternalServiceError:
-            if not self._use_fallback_measurements:
+            if not self._use_fallback_measurements or parameter != "water_level":
                 raise
             logger.info(
                 "Using fallback recent measurements",
@@ -104,6 +149,32 @@ class WaterService:
             measurements = _fallback_measurements(hours)
 
         return measurements
+
+    async def _latest_observations_by_parameter(
+        self,
+    ) -> dict[MeasurementParameter, dict[str, RwsLatestObservation]]:
+        observations_by_parameter: dict[MeasurementParameter, dict[str, RwsLatestObservation]] = {
+            parameter: {}
+            for parameter in SUPPORTED_PARAMETERS
+        }
+        for parameter in SUPPORTED_PARAMETERS:
+            try:
+                if hasattr(self._rws_client, "fetch_latest_locations"):
+                    observations = await self._rws_client.fetch_latest_locations(parameter)
+                elif parameter == "water_level":
+                    observations = await self._rws_client.fetch_latest_water_level_locations()
+                else:
+                    observations = []
+            except ExternalServiceError:
+                if parameter == "water_level":
+                    raise
+                logger.info(
+                    "Latest optional parameter observations unavailable",
+                    extra={"parameter": parameter},
+                )
+                continue
+            observations_by_parameter[parameter] = _freshest_by_station(observations)
+        return observations_by_parameter
 
     async def _filter_stations_with_recent_measurements(
         self,
@@ -115,10 +186,17 @@ class WaterService:
         async def is_active(station: Station) -> bool:
             async with semaphore:
                 try:
-                    measurements = await self._rws_client.fetch_recent_measurements(
-                        station.id,
-                        int(self._active_station_max_age.total_seconds() // 3600),
-                    )
+                    try:
+                        measurements = await self._rws_client.fetch_recent_measurements(
+                            station.id,
+                            int(self._active_station_max_age.total_seconds() // 3600),
+                            parameter="water_level",
+                        )
+                    except TypeError:
+                        measurements = await self._rws_client.fetch_recent_measurements(
+                            station.id,
+                            int(self._active_station_max_age.total_seconds() // 3600),
+                        )
                 except ExternalServiceError:
                     logger.info(
                         "Skipping station without recent RWS measurements",
@@ -150,3 +228,16 @@ def _fallback_measurements(hours: int) -> list[Measurement]:
         current += timedelta(hours=1)
         index += 1
     return points
+
+
+def _freshest_by_station(
+    observations: list[RwsLatestObservation],
+) -> dict[str, RwsLatestObservation]:
+    freshest: dict[str, RwsLatestObservation] = {}
+    for observation in observations:
+        if observation.measured_at is None:
+            continue
+        current = freshest.get(observation.code)
+        if current is None or observation.measured_at > current.measured_at:
+            freshest[observation.code] = observation
+    return freshest

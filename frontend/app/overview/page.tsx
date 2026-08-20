@@ -216,7 +216,7 @@ function StationRow({ station, rank }: { station: OverviewStation; rank: number 
           <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
             <Metric label="Current" value={formatValue(station.current_value, station.unit)} />
             <Metric label="Seasonal" value={formatPercentile(station.seasonal_percentile)} />
-            <Metric label="Movement" value={formatDelta(station.delta_24h)} />
+            <Metric label="Movement" value={formatDelta(station.delta_24h, station.unit)} />
           </div>
           {station.primary_signal ? (
             <p className="mt-3 max-w-3xl text-sm text-slate-600">{station.primary_signal.message}</p>
@@ -273,11 +273,14 @@ function formatPercentile(value: number | null) {
   return `${Math.round(value)}th percentile`;
 }
 
-function formatDelta(value: number | null) {
+function formatDelta(value: number | null, unit: string | null) {
   if (value == null) {
     return "n/a";
   }
   const sign = value > 0 ? "+" : "";
+  if (unit === "m3/s") {
+    return `${sign}${Math.round(value)} m3/s / 24h`;
+  }
   return `${sign}${Math.round(value * 100)} cm / 24h`;
 }
 

@@ -68,12 +68,28 @@ npm run build
 - `GET /api/health`
 - `GET /api/stations`
 - `GET /api/stations/{station_id}`
-- `GET /api/stations/{station_id}/measurements?hours=48`
+- `GET /api/stations/{station_id}/measurements?parameter=water_level&hours=48`
 - `GET /api/stations/{station_id}/seasonal-context?parameter=water_level`
 - `GET /api/stations/{station_id}/anomaly?parameter=water_level`
 - `GET /api/overview?parameter=water_level&filter=all&sort=anomaly_score&limit=50`
 
 The frontend receives normalized application models only. Rijkswaterstaat-specific response fields stay inside the backend client/service layer.
+
+## Supported Parameters
+
+The backend exposes stable application parameter names and keeps raw
+Rijkswaterstaat codes inside the RWS integration layer:
+
+```text
+water_level -> RWS Grootheid WATHTE, surface water OW, NAP reference, source cm, app unit m NAP
+discharge   -> RWS Grootheid Q, surface water OW, source/app unit m3/s
+```
+
+Station responses include `available_parameters`, `parameters`, and
+`parameter_metadata`. Unsupported parameters are omitted rather than returned as
+mostly-null fields. Current map behavior remains water-level based; station
+detail views can request recent history, seasonal context, and anomaly
+detection for supported parameters.
 
 ## Historical Seasonal Percentiles
 
@@ -97,6 +113,22 @@ uv run python -m app.jobs.backfill_station \
 
 The job is idempotent: it upserts raw normalized measurements and recomputes daily statistics for each chunk. Percentiles compare the current 24-hour mean with historical daily means in a configurable ±14 day seasonal window, excluding the current year.
 
+Discharge uses the same job and storage model:
+
+```bash
+cd backend
+uv run alembic upgrade head
+uv run python -m app.jobs.backfill_station \
+  --station-id lobith.bovenrijn.tolkamer \
+  --parameter discharge \
+  --from 2010-01-01 \
+  --to 2025-12-31
+```
+
+Historical discharge context uses daily means, matching the existing 24-hour
+change-statistic model and the RWS daily-average discharge concept. Source
+units other than `m3/s` are rejected for v1 rather than converted silently.
+
 To keep the persisted station list limited to currently active stations, run:
 
 ```bash
@@ -106,10 +138,12 @@ uv run python -m app.jobs.sync_active_stations --active-max-age-hours 24
 
 ## Data Notes
 
-- Latest stations are filtered to surface-water water-height observations: `COMPARTIMENTCODE=OW`, `GROOTHEIDCODE=WATHTE`.
+- The active station list is anchored on curated surface-water water-height observations: `COMPARTIMENTCODE=OW`, `GROOTHEIDCODE=WATHTE`.
 - Source values in centimeters are normalized to meters for app responses.
+- Discharge observations use `COMPARTIMENTCODE=OW`, `GROOTHEIDCODE=Q`, and are
+  preserved in `m3/s`.
 - DDAPI20 WFS coordinates were observed as `POINT (latitude longitude)` and are mapped to app fields as `latitude` and `longitude`.
-- Historical percentile context is read from persisted backfill data and daily aggregates. Live station lists and current values still come directly from Rijkswaterstaat.
+- Historical percentile context is read from persisted backfill data and daily aggregates. Live station lists and current parameter values still come directly from Rijkswaterstaat.
 
 ## Anomaly Detection
 
@@ -121,7 +155,7 @@ The anomaly score is unusualness, not danger or flood probability:
 
 ```text
 component_score = abs(percentile - 50) * 2
-overall_score = 0.55 * seasonal_level_score + 0.45 * 24h_change_score
+overall_score = 0.55 * seasonal_value_score + 0.45 * 24h_change_score
 ```
 
 Both high and low extremes are treated symmetrically. A 99th percentile and a

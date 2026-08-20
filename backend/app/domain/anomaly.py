@@ -252,8 +252,10 @@ def build_anomaly_result(
     level_years_used: int,
     level_value: float,
     level_unit: str,
+    parameter_label: str = "Water level",
     change_reference: ChangeReference,
     delta_24h: float | None,
+    delta_unit: str = "m",
     features: RecentFeatures,
     data_quality_status: str,
     data_quality_signals: list[AnomalySignal],
@@ -290,14 +292,14 @@ def build_anomaly_result(
         component_scores.append((LEVEL_WEIGHT, level_score))
         signals.append(
             AnomalySignal(
-                type="seasonal_level",
+                type="seasonal_value",
                 category="hydrological",
                 score=level_score,
                 direction="high" if level_percentile > 50 else "low",
                 value=level_value,
                 unit=level_unit,
                 percentile=level_percentile,
-                message=_level_message(level_percentile),
+                message=_level_message(level_percentile, parameter_label),
             )
         )
 
@@ -311,7 +313,7 @@ def build_anomaly_result(
                 score=change_score,
                 direction="rising" if delta_24h >= 0 else "falling",
                 value=delta_24h,
-                unit="m",
+                unit=delta_unit,
                 percentile=change_reference.percentile,
                 message=_change_message(delta_24h, change_reference.percentile),
             )
@@ -482,14 +484,14 @@ def _quality_signal(
     )
 
 
-def _level_message(percentile: float) -> str:
+def _level_message(percentile: float, parameter_label: str) -> str:
     if percentile >= 50:
         return (
-            f"Water level is higher than {percentile:.0f}% of historical observations "
+            f"{parameter_label} is higher than {percentile:.0f}% of historical observations "
             "for this time of year."
         )
     return (
-        f"Water level is lower than {100 - percentile:.0f}% of historical observations "
+        f"{parameter_label} is lower than {100 - percentile:.0f}% of historical observations "
         "for this time of year."
     )
 

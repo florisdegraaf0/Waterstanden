@@ -25,6 +25,7 @@ from app.domain.overview import (
     OverviewStation,
     OverviewSummary,
 )
+from app.domain.parameters import parameter_metadata, validate_parameter
 from app.domain.seasonal import SeasonalConfig, calculate_seasonal_context
 from app.exceptions import ExternalServiceError
 from app.repositories.water import WaterRepository
@@ -74,6 +75,7 @@ class OverviewService:
         sort: str = "anomaly_score",
         limit: int = 50,
     ) -> OverviewResult:
+        parameter = validate_parameter(parameter)
         if overview_filter not in OVERVIEW_FILTERS:
             overview_filter = "all"
         if sort not in OVERVIEW_SORTS:
@@ -131,6 +133,9 @@ class OverviewService:
 
     async def refresh(self, *, parameter: str = "water_level", generated_at: datetime) -> datetime:
         active_stations = await self._water_service.list_stations()
+        active_stations = [
+            station for station in active_stations if parameter in station.available_parameters
+        ]
         station_ids = [station.id for station in active_stations]
         daily_statistics = self._repository.list_daily_statistics_for_stations(
             station_ids,
@@ -141,7 +146,10 @@ class OverviewService:
             parameter,
             DELTA_WINDOW_HOURS,
         )
-        recent_measurements = await self._recent_measurements_by_station(active_stations)
+        recent_measurements = await self._recent_measurements_by_station(
+            active_stations,
+            parameter=parameter,
+        )
 
         overview_stations = [
             _build_station_overview(
@@ -166,6 +174,7 @@ class OverviewService:
     async def _recent_measurements_by_station(
         self,
         stations: list[Station],
+        parameter: str,
     ) -> dict[str, list[Measurement]]:
         semaphore = asyncio.Semaphore(self._recent_measurement_concurrency)
 
@@ -177,6 +186,7 @@ class OverviewService:
                         await self._water_service.get_measurements(
                             station.id,
                             self._anomaly_config.recent_window_hours,
+                            parameter=parameter,
                         ),
                     )
                 except ExternalServiceError as exc:
@@ -201,7 +211,7 @@ def _build_station_overview(
     anomaly_config: AnomalyConfig,
     evaluated_at: datetime,
 ) -> OverviewStation:
-    current = _current_measurement(station, evaluated_at)
+    current = _current_measurement(station, parameter, evaluated_at)
     current_24h_measurements = [
         measurement
         for measurement in recent_measurements
@@ -249,8 +259,10 @@ def _build_station_overview(
         level_years_used=seasonal_context.years_used,
         level_value=current.value,
         level_unit=current.unit,
+        parameter_label=parameter_metadata(parameter).label,
         change_reference=change_reference,
         delta_24h=features.delta_24h,
+        delta_unit=current.unit,
         features=features,
         data_quality_status=data_quality_status,
         data_quality_signals=data_quality_signals,
@@ -268,9 +280,9 @@ def _build_station_overview(
         water_system=str(station.metadata.get("water_system") or "Unknown"),
         latitude=station.latitude,
         longitude=station.longitude,
-        current_value=station.latest_value,
-        unit=station.unit,
-        measured_at=station.measured_at,
+        current_value=current.value,
+        unit=current.unit,
+        measured_at=current.measured_at,
         parameter=parameter,
         seasonal_percentile=seasonal_context.percentile,
         seasonal_status=seasonal_context.status,
@@ -335,12 +347,20 @@ def _build_overview_result(
     )
 
 
-def _current_measurement(station: Station, fallback_time: datetime) -> Measurement:
+def _current_measurement(
+    station: Station,
+    parameter: str,
+    fallback_time: datetime,
+) -> Measurement:
+    station_parameters = station.parameters or {}
+    selected = station_parameters.get(parameter)
+    if selected is not None:
+        return selected
     return Measurement(
         measured_at=station.measured_at or fallback_time,
         value=station.latest_value or 0.0,
-        unit=station.unit or "m",
-        parameter=station.parameter,
+        unit=station.unit or parameter_metadata(parameter).default_unit,
+        parameter=parameter,
         quality_code=station.quality_code,
     )
 

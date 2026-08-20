@@ -29,6 +29,7 @@ export function WaterMap() {
   const [stations, setStations] = useState<MapStation[]>([]);
   const [selectedGroup, setSelectedGroup] = useState("all");
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
+  const [selectedParameter, setSelectedParameter] = useState("water_level");
   const [measurements, setMeasurements] = useState<MeasurementPoint[]>([]);
   const [seasonalContext, setSeasonalContext] = useState<SeasonalContext | null>(null);
   const [anomaly, setAnomaly] = useState<StationAnomaly | null>(null);
@@ -89,6 +90,7 @@ export function WaterMap() {
   const selectStation = useCallback(async (stationId: string) => {
     const baseStation = stations.find((station) => station.id === stationId) ?? null;
     setSelectedStation(baseStation);
+    setSelectedParameter("water_level");
     setMeasurements([]);
     setSeasonalContext(null);
     setAnomaly(null);
@@ -96,16 +98,16 @@ export function WaterMap() {
     setMeasurementsLoading(true);
 
     try {
-      const [station, stationMeasurements] = await Promise.all([
-        fetchStation(stationId),
-        fetchMeasurements(stationId, 48)
-      ]);
+      const station = await fetchStation(stationId);
+      const parameter = defaultParameter(station);
+      const stationMeasurements = await fetchMeasurements(stationId, 48, parameter);
       setSelectedStation(station);
+      setSelectedParameter(parameter);
       setMeasurements(stationMeasurements);
-      fetchSeasonalContext(station)
+      fetchSeasonalContext(station, parameter)
         .then(setSeasonalContext)
         .catch(() => setSeasonalContext(null));
-      fetchStationAnomaly(station)
+      fetchStationAnomaly(station, parameter)
         .then(setAnomaly)
         .catch(() => setAnomaly(null));
     } catch {
@@ -114,6 +116,32 @@ export function WaterMap() {
       setMeasurementsLoading(false);
     }
   }, [stations]);
+
+  const selectParameter = useCallback(async (parameter: string) => {
+    if (!selectedStation) {
+      return;
+    }
+    setSelectedParameter(parameter);
+    setMeasurements([]);
+    setSeasonalContext(null);
+    setAnomaly(null);
+    setMeasurementsError(null);
+    setMeasurementsLoading(true);
+    try {
+      const stationMeasurements = await fetchMeasurements(selectedStation.id, 48, parameter);
+      setMeasurements(stationMeasurements);
+      fetchSeasonalContext(selectedStation, parameter)
+        .then(setSeasonalContext)
+        .catch(() => setSeasonalContext(null));
+      fetchStationAnomaly(selectedStation, parameter)
+        .then(setAnomaly)
+        .catch(() => setAnomaly(null));
+    } catch {
+      setMeasurementsError("Recent measurements are temporarily unavailable.");
+    } finally {
+      setMeasurementsLoading(false);
+    }
+  }, [selectedStation]);
 
   const stationGroups = stationGroupOptions(stations);
   const filteredStations = stations.filter((station) => {
@@ -245,8 +273,10 @@ export function WaterMap() {
         measurements={measurements}
         seasonalContext={seasonalContext}
         anomaly={anomaly}
+        selectedParameter={selectedParameter}
         loading={measurementsLoading}
         error={measurementsError}
+        onSelectParameter={selectParameter}
         onClose={() => setSelectedStation(null)}
       />
     </main>
@@ -281,6 +311,13 @@ function stationGroupOptions(stations: MapStation[]): StationGroupOption[] {
   }
   const groups = [...byGroup.values()].sort((a, b) => a.label.localeCompare(b.label));
   return [{ value: "all", label: "All", count: stations.length }, ...groups];
+}
+
+function defaultParameter(station: Station) {
+  if (station.available_parameters.includes("water_level")) {
+    return "water_level";
+  }
+  return station.available_parameters[0] ?? "water_level";
 }
 
 function markerClassName(isSelected: boolean) {

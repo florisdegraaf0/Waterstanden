@@ -12,6 +12,7 @@ from app.domain.anomaly import (
     detect_data_quality,
 )
 from app.domain.models import Measurement, StationAnomaly
+from app.domain.parameters import parameter_metadata, validate_parameter
 from app.repositories.water import WaterRepository
 from app.services.seasonal import SeasonalContextService
 from app.services.water import WaterService
@@ -38,12 +39,14 @@ class AnomalyService:
         station_id: str,
         parameter: str = "water_level",
     ) -> StationAnomaly:
+        parameter = validate_parameter(parameter)
         station = await self._water_service.get_station(station_id)
         evaluated_at = datetime.now(UTC)
-        current = _current_measurement(station)
+        current = _current_measurement(station, parameter)
         recent_measurements = await self._water_service.get_measurements(
             station_id,
             self._anomaly_config.recent_window_hours,
+            parameter=parameter,
         )
         current_24h_measurements = [
             measurement
@@ -84,8 +87,10 @@ class AnomalyService:
             level_years_used=seasonal_context.years_used,
             level_value=current.value,
             level_unit=current.unit,
+            parameter_label=parameter_metadata(parameter).label,
             change_reference=change_reference,
             delta_24h=features.delta_24h,
+            delta_unit=current.unit,
             features=features,
             data_quality_status=data_quality_status,
             data_quality_signals=data_quality_signals,
@@ -119,19 +124,23 @@ class AnomalyService:
             return []
 
 
-def _current_measurement(station) -> Measurement:
+def _current_measurement(station, parameter: str) -> Measurement:
+    station_parameters = station.parameters or {}
+    selected = station_parameters.get(parameter)
+    if selected is not None:
+        return selected
     if station.latest_value is None or station.measured_at is None:
         return Measurement(
             measured_at=datetime.now(UTC),
             value=0.0,
-            unit=station.unit or "m",
-            parameter=station.parameter,
+            unit=parameter_metadata(parameter).default_unit,
+            parameter=parameter,
             quality_code=station.quality_code,
         )
     return Measurement(
         measured_at=station.measured_at,
         value=station.latest_value,
-        unit=station.unit or "m",
-        parameter=station.parameter,
+        unit=station.unit or parameter_metadata(parameter).default_unit,
+        parameter=parameter,
         quality_code=station.quality_code,
     )

@@ -6,6 +6,7 @@ from statistics import mean
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.domain.models import DailyStatistic, Measurement, SeasonalContext, Station
+from app.domain.parameters import validate_parameter
 from app.domain.seasonal import SeasonalConfig, calculate_seasonal_context
 from app.repositories.water import WaterRepository
 
@@ -18,7 +19,11 @@ class SeasonalContextService:
         self._config = config
 
     def get_context(self, station: Station, parameter: str = "water_level") -> SeasonalContext:
-        if station.latest_value is None or station.measured_at is None:
+        parameter = validate_parameter(parameter)
+        current = (station.parameters or {}).get(parameter)
+        current_value = current.value if current else station.latest_value
+        measured_at = current.measured_at if current else station.measured_at
+        if current_value is None or measured_at is None:
             return SeasonalContext(
                 status="insufficient_data",
                 percentile=None,
@@ -35,8 +40,8 @@ class SeasonalContextService:
             return _historical_data_unavailable(self._config.window_days)
 
         return calculate_seasonal_context(
-            current_value=station.latest_value,
-            current_date=station.measured_at.date(),
+            current_value=current_value,
+            current_date=measured_at.date(),
             historical_daily_values=daily_values,
             config=self._config,
         )
@@ -50,6 +55,7 @@ class SeasonalContextService:
         current_measurements: list[Measurement] | None = None,
         parameter: str = "water_level",
     ) -> SeasonalContext:
+        parameter = validate_parameter(parameter)
         if current_value is None or measured_at is None:
             return SeasonalContext(
                 status="insufficient_data",

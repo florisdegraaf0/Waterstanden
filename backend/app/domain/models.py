@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import date, datetime
 
@@ -15,6 +17,8 @@ class Station:
     status: str | None
     quality_code: str | None
     metadata: dict[str, str | float | None]
+    available_parameters: tuple[str, ...] = ("water_level",)
+    parameters: dict[str, Measurement] | None = None
 
 
 @dataclass(frozen=True)

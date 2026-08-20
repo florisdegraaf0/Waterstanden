@@ -27,3 +27,28 @@ def test_measurement_rows_deduplicates_by_database_conflict_key() -> None:
 
     assert len(rows) == 1
     assert rows[0]["value"] == 2.0
+
+
+def test_measurement_rows_keep_parameters_separate_at_same_timestamp() -> None:
+    measured_at = datetime(2026, 8, 18, tzinfo=UTC)
+
+    rows = _measurement_rows(
+        1,
+        [
+            Measurement(
+                measured_at=measured_at,
+                value=9.37,
+                unit="m NAP",
+                parameter="water_level",
+            ),
+            Measurement(
+                measured_at=measured_at,
+                value=2340,
+                unit="m3/s",
+                parameter="discharge",
+            ),
+        ],
+    )
+
+    assert len(rows) == 2
+    assert {row["parameter"] for row in rows} == {"water_level", "discharge"}

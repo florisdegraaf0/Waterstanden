@@ -42,6 +42,12 @@ class MeasurementRecord(Base):
             name="uq_measurement_series_time",
         ),
         Index("ix_measurements_station_measured_at", "station_id", "measured_at"),
+        Index(
+            "ix_measurements_station_parameter_measured_at",
+            "station_id",
+            "parameter",
+            "measured_at",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -84,6 +90,12 @@ class StationDailyStatisticRecord(Base):
             "station_id",
             "date",
         ),
+        Index(
+            "ix_station_daily_statistics_station_parameter_date",
+            "station_id",
+            "parameter",
+            "date",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -120,6 +132,13 @@ class StationHistoricalChangeStatisticRecord(Base):
         Index(
             "ix_station_historical_change_statistics_station_date",
             "station_id",
+            "date",
+        ),
+        Index(
+            "ix_station_historical_change_statistics_series_window_date",
+            "station_id",
+            "parameter",
+            "window_hours",
             "date",
         ),
     )

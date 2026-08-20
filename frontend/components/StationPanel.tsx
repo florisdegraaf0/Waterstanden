@@ -3,21 +3,24 @@
 import { AlertCircle, Info, Loader2, X } from "lucide-react";
 
 import type {
+  CurrentMeasurement,
   MeasurementPoint,
   SeasonalContext,
   SeasonalStatus,
   Station,
   StationAnomaly
 } from "@/lib/api";
-import { WaterLevelChart } from "@/components/WaterLevelChart";
+import { MeasurementChart } from "@/components/MeasurementChart";
 
 type Props = {
   station: Station | null;
   measurements: MeasurementPoint[];
   seasonalContext: SeasonalContext | null;
   anomaly: StationAnomaly | null;
+  selectedParameter: string;
   loading: boolean;
   error: string | null;
+  onSelectParameter: (parameter: string) => void;
   onClose: () => void;
 };
 
@@ -26,19 +29,25 @@ export function StationPanel({
   measurements,
   seasonalContext,
   anomaly,
+  selectedParameter,
   loading,
   error,
+  onSelectParameter,
   onClose
 }: Props) {
   if (!station) {
     return null;
   }
 
-  const measuredAt = station.measured_at
+  const selectedCurrent = currentMeasurement(station, selectedParameter);
+  const selectedMetadata = station.parameter_metadata[selectedParameter];
+  const selectedLabel = selectedMetadata?.label ?? selectedParameter;
+  const selectedUnit = selectedCurrent.unit ?? selectedMetadata?.default_unit ?? "";
+  const measuredAt = selectedCurrent.measured_at
     ? new Intl.DateTimeFormat("nl-NL", {
         dateStyle: "medium",
         timeStyle: "short"
-      }).format(new Date(station.measured_at))
+      }).format(new Date(selectedCurrent.measured_at))
     : "Geen tijd beschikbaar";
 
   return (
@@ -64,14 +73,20 @@ export function StationPanel({
       </div>
 
       <div className="space-y-5 px-5 py-5">
+        <ParameterSummary
+          selectedParameter={selectedParameter}
+          station={station}
+          onSelectParameter={onSelectParameter}
+        />
+
         <div>
-          <div className="text-sm text-slate-500">Current water level</div>
+          <div className="text-sm text-slate-500">Current {selectedLabel.toLowerCase()}</div>
           <div className="mt-1 flex items-end gap-2">
             <span className="text-4xl font-semibold tracking-normal text-ink">
-              {station.latest_value == null ? "n/a" : station.latest_value.toFixed(2)}
+              {formatMeasurementValue(selectedCurrent.value, selectedUnit)}
             </span>
-            {station.unit ? (
-              <span className="pb-1 text-sm font-medium text-slate-500">{station.unit}</span>
+            {selectedUnit ? (
+              <span className="pb-1 text-sm font-medium text-slate-500">{selectedUnit}</span>
             ) : null}
           </div>
         </div>
@@ -83,7 +98,7 @@ export function StationPanel({
           </div>
         </dl>
 
-        <SeasonalSection context={seasonalContext} unit={station.unit} />
+        <SeasonalSection context={seasonalContext} unit={selectedUnit} label={selectedLabel} />
         <AnomalySection anomaly={anomaly} />
 
         <section>
@@ -97,7 +112,11 @@ export function StationPanel({
               <span>{error}</span>
             </div>
           ) : measurements.length > 0 ? (
-            <WaterLevelChart measurements={measurements} />
+            <MeasurementChart
+              measurements={measurements}
+              label={selectedLabel}
+              unit={selectedUnit || measurements[0]?.unit || ""}
+            />
           ) : (
             <div className="rounded border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
               No recent measurements available.
@@ -106,6 +125,55 @@ export function StationPanel({
         </section>
       </div>
     </aside>
+  );
+}
+
+function ParameterSummary({
+  station,
+  selectedParameter,
+  onSelectParameter
+}: {
+  station: Station;
+  selectedParameter: string;
+  onSelectParameter: (parameter: string) => void;
+}) {
+  const parameters = station.available_parameters.length
+    ? station.available_parameters
+    : Object.keys(station.parameters);
+
+  if (parameters.length <= 1) {
+    return null;
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {parameters.map((parameter) => {
+        const metadata = station.parameter_metadata[parameter];
+        const current = currentMeasurement(station, parameter);
+        const unit = current.unit ?? metadata?.default_unit ?? "";
+        const selected = parameter === selectedParameter;
+        return (
+          <button
+            className={`border p-3 text-left ${
+              selected
+                ? "border-teal-700 bg-teal-50 text-ink"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+            key={parameter}
+            onClick={() => onSelectParameter(parameter)}
+            type="button"
+          >
+            <div className="text-xs font-medium text-slate-500">
+              {metadata?.label ?? parameter}
+            </div>
+            <div className="mt-1 text-lg font-semibold text-ink">
+              {formatMeasurementValue(current.value, unit)}
+            </div>
+            {unit ? <div className="text-xs text-slate-500">{unit}</div> : null}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -212,11 +280,19 @@ function confidenceLabel(confidence: StationAnomaly["anomaly"]["confidence"]) {
   return labels[confidence];
 }
 
-function SeasonalSection({ context, unit }: { context: SeasonalContext | null; unit: string | null }) {
+function SeasonalSection({
+  context,
+  unit,
+  label
+}: {
+  context: SeasonalContext | null;
+  unit: string | null;
+  label: string;
+}) {
   if (!context) {
     return (
       <section className="border-y border-slate-200 py-4">
-        <SeasonalContextTitle />
+        <SeasonalContextTitle label={label} />
         <div className="mt-2 text-sm text-slate-500">Historical comparison is loading.</div>
       </section>
     );
@@ -226,7 +302,7 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
   if (seasonal.status === "insufficient_data" && seasonal.sample_size === 0) {
     return (
       <section className="border-y border-slate-200 py-4">
-        <SeasonalContextTitle />
+        <SeasonalContextTitle label={label} />
         <div className="mt-2 text-sm font-medium text-amber-700">
           No historical backfill data loaded.
         </div>
@@ -240,7 +316,7 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
   if (seasonal.status === "historical_data_unavailable") {
     return (
       <section className="border-y border-slate-200 py-4">
-        <SeasonalContextTitle />
+        <SeasonalContextTitle label={label} />
         <div className="mt-2 text-sm font-medium text-amber-700">
           Historical comparison is unavailable.
         </div>
@@ -265,7 +341,7 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
 
     return (
       <section className="border-y border-slate-200 py-4">
-        <SeasonalContextTitle />
+        <SeasonalContextTitle label={label} />
         <div className="mt-2 text-sm font-medium text-amber-700">{message}</div>
         <div className="mt-1 text-xs text-slate-500">{detail}</div>
       </section>
@@ -276,7 +352,7 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
     <section className="border-y border-slate-200 py-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <SeasonalContextTitle />
+          <SeasonalContextTitle label={label} />
           <div className="mt-2 text-2xl font-semibold text-ink">
             {formatPercentile(seasonal.percentile)}
           </div>
@@ -314,13 +390,13 @@ function SeasonalSection({ context, unit }: { context: SeasonalContext | null; u
   );
 }
 
-function SeasonalContextTitle() {
+function SeasonalContextTitle({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-1.5 text-sm font-semibold text-ink">
       <span>Seasonal context</span>
-      <span title="Seasonal percentile uses the 24 hour average water level.">
+      <span title={`Seasonal percentile uses the 24 hour average ${label.toLowerCase()}.`}>
         <Info
-          aria-label="Seasonal percentile uses the 24 hour average water level."
+          aria-label={`Seasonal percentile uses the 24 hour average ${label.toLowerCase()}.`}
           className="text-slate-400"
           size={14}
         />
@@ -334,10 +410,30 @@ function StatLabel({ label, value, unit }: { label: string; value: number; unit:
     <div>
       <div className="font-medium text-slate-700">{label}</div>
       <div>
-        {value.toFixed(2)} {unit ?? "m"}
+        {formatMeasurementValue(value, unit ?? "")} {unit ?? "m"}
       </div>
     </div>
   );
+}
+
+function currentMeasurement(station: Station, parameter: string): CurrentMeasurement {
+  return (
+    station.parameters?.[parameter] ?? {
+      value: station.latest_value,
+      unit: station.unit,
+      measured_at: station.measured_at
+    }
+  );
+}
+
+function formatMeasurementValue(value: number | null, unit: string | null) {
+  if (value == null) {
+    return "n/a";
+  }
+  if (unit === "m3/s") {
+    return new Intl.NumberFormat("nl-NL", { maximumFractionDigits: 0 }).format(value);
+  }
+  return value.toFixed(2);
 }
 
 function formatPercentile(value: number) {

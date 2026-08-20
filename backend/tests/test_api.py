@@ -93,8 +93,95 @@ async def test_stations_endpoint_returns_normalized_stations() -> None:
             "station_group": "rhine",
             "station_group_label": "Rhine",
             "significance": "Total Rhine inflow entering the Netherlands",
+            "available_parameters": ["water_level"],
+            "parameters": {
+                "water_level": {
+                    "value": 9.37,
+                    "unit": "m NAP",
+                    "measured_at": RECENT_MEASURED_AT.isoformat().replace("+00:00", "Z"),
+                }
+            },
+            "parameter_metadata": {
+                "water_level": {
+                    "label": "Water level",
+                    "default_unit": "m NAP",
+                    "historical_aggregation": "daily_mean",
+                }
+            },
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_station_with_discharge_advertises_parameter_and_history() -> None:
+    class DischargeRwsClient(FakeRwsClient):
+        async def fetch_latest_locations(self, parameter: str) -> list[RwsLatestObservation]:
+            if parameter == "discharge":
+                return [
+                    RwsLatestObservation(
+                        code=LOBITH_ID,
+                        name="Lobith",
+                        latitude=51.854205,
+                        longitude=6.091178,
+                        value=2340,
+                        unit_code="m3/s",
+                        measured_at=RECENT_MEASURED_AT,
+                        parameter_description="Debiet in Oppervlaktewater in m3/s",
+                        status="Ongecontroleerd",
+                        quality_code="00",
+                        grootheid_code="Q",
+                        compartiment_code="OW",
+                        hoedanigheid_code="NVT",
+                        raw_metadata={"source": "test"},
+                    )
+                ]
+            return await self.fetch_latest_water_level_locations()
+
+        async def fetch_recent_measurements(
+            self,
+            station_code: str,
+            hours: int,
+            parameter: str = "water_level",
+        ) -> list[Measurement]:
+            assert station_code == LOBITH_ID
+            assert hours == 48
+            if parameter == "discharge":
+                return [
+                    Measurement(
+                        measured_at=RECENT_MEASURED_AT,
+                        value=2340,
+                        unit="m3/s",
+                        parameter="discharge",
+                        quality_code="00",
+                    )
+                ]
+            return await super().fetch_recent_measurements(station_code, hours)
+
+    async def discharge_rws_client():
+        yield DischargeRwsClient()
+
+    app.dependency_overrides[get_rws_client] = discharge_rws_client
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        stations_response = await client.get("/api/stations")
+        measurements_response = await client.get(
+            f"/api/stations/{LOBITH_ID}/measurements",
+            params={"hours": 48, "parameter": "discharge"},
+        )
+
+    assert stations_response.status_code == 200
+    station = stations_response.json()[0]
+    assert station["available_parameters"] == ["water_level", "discharge"]
+    assert station["parameters"]["discharge"] == {
+        "value": 2340.0,
+        "unit": "m3/s",
+        "measured_at": RECENT_MEASURED_AT.isoformat().replace("+00:00", "Z"),
+    }
+    assert station["parameter_metadata"]["discharge"]["label"] == "Discharge"
+    assert measurements_response.status_code == 200
+    assert measurements_response.json()[0]["parameter"] == "discharge"
+    assert measurements_response.json()[0]["unit"] == "m3/s"
 
 
 @pytest.mark.asyncio
@@ -498,7 +585,7 @@ async def test_anomaly_endpoint_returns_explainable_score(
     assert payload["anomaly"]["status"] == "ok"
     assert payload["anomaly"]["score"] >= 90
     assert {signal["type"] for signal in payload["anomaly"]["signals"]} == {
-        "seasonal_level",
+        "seasonal_value",
         "rate_of_change_24h",
     }
 

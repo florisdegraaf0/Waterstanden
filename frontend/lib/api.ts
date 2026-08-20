@@ -15,7 +15,22 @@ export type Station = {
   station_group: string | null;
   station_group_label: string | null;
   significance: string | null;
+  available_parameters: string[];
+  parameters: Record<string, CurrentMeasurement>;
+  parameter_metadata: Record<string, ParameterMetadata>;
   metadata?: Record<string, string | number | null>;
+};
+
+export type CurrentMeasurement = {
+  value: number | null;
+  unit: string | null;
+  measured_at: string | null;
+};
+
+export type ParameterMetadata = {
+  label: string;
+  default_unit: string;
+  historical_aggregation: string;
 };
 
 export type MeasurementPoint = {
@@ -215,38 +230,50 @@ export function fetchStations(): Promise<Station[]> {
 }
 
 export function fetchMapStations(): Promise<MapStation[]> {
-  return fetchJson<MapStation[]>("/api/map-stations");
+  const params = new URLSearchParams({ parameter: "water_level" });
+  return fetchJson<MapStation[]>(`/api/map-stations?${params}`);
 }
 
 export function fetchStation(stationId: string): Promise<Station> {
   return fetchJson<Station>(`/api/stations/${encodeURIComponent(stationId)}`);
 }
 
-export function fetchMeasurements(stationId: string, hours: number): Promise<MeasurementPoint[]> {
-  const params = new URLSearchParams({ hours: String(hours) });
+export function fetchMeasurements(
+  stationId: string,
+  hours: number,
+  parameter = "water_level"
+): Promise<MeasurementPoint[]> {
+  const params = new URLSearchParams({ hours: String(hours), parameter });
   return fetchJson<MeasurementPoint[]>(
     `/api/stations/${encodeURIComponent(stationId)}/measurements?${params}`
   );
 }
 
-export function fetchSeasonalContext(station: Station): Promise<SeasonalContext> {
-  const params = new URLSearchParams({ parameter: "water_level" });
-  if (station.latest_value != null) {
-    params.set("current_value", String(station.latest_value));
+export function fetchSeasonalContext(
+  station: Station,
+  parameter = "water_level"
+): Promise<SeasonalContext> {
+  const current = currentMeasurementForParameter(station, parameter);
+  const params = new URLSearchParams({ parameter });
+  if (current.value != null) {
+    params.set("current_value", String(current.value));
   }
-  if (station.unit) {
-    params.set("current_unit", station.unit);
+  if (current.unit) {
+    params.set("current_unit", current.unit);
   }
-  if (station.measured_at) {
-    params.set("measured_at", station.measured_at);
+  if (current.measured_at) {
+    params.set("measured_at", current.measured_at);
   }
   return fetchJson<SeasonalContext>(
     `/api/stations/${encodeURIComponent(station.id)}/seasonal-context?${params}`
   );
 }
 
-export function fetchStationAnomaly(station: Station): Promise<StationAnomaly> {
-  const params = new URLSearchParams({ parameter: "water_level" });
+export function fetchStationAnomaly(
+  station: Station,
+  parameter = "water_level"
+): Promise<StationAnomaly> {
+  const params = new URLSearchParams({ parameter });
   return fetchJson<StationAnomaly>(
     `/api/stations/${encodeURIComponent(station.id)}/anomaly?${params}`
   );
@@ -256,12 +283,23 @@ export function fetchOverview(options: {
   filter: OverviewFilter;
   sort: OverviewSort;
   limit?: number;
+  parameter?: string;
 }): Promise<Overview> {
   const params = new URLSearchParams({
-    parameter: "water_level",
+    parameter: options.parameter ?? "water_level",
     filter: options.filter,
     sort: options.sort,
     limit: String(options.limit ?? 50)
   });
   return fetchJson<Overview>(`/api/overview?${params}`);
+}
+
+function currentMeasurementForParameter(station: Station, parameter: string): CurrentMeasurement {
+  return (
+    station.parameters?.[parameter] ?? {
+      value: station.latest_value,
+      unit: station.unit,
+      measured_at: station.measured_at
+    }
+  );
 }

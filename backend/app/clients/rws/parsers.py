@@ -6,10 +6,15 @@ from typing import Any
 
 from app.clients.rws.models import RwsLatestObservation
 from app.domain.models import Measurement
+from app.domain.parameters import (
+    parameter_from_rws_grootheid,
+    parameter_metadata,
+)
 from app.exceptions import ExternalDataError
 
 ALLOWED_QUALITY_CODES = {"00", "10", "20", "25", "30", "40"}
 WATER_LEVEL_CODE = "WATHTE"
+DISCHARGE_CODE = "Q"
 SURFACE_WATER_CODE = "OW"
 
 _POINT_RE = re.compile(
@@ -29,22 +34,32 @@ def parse_latest_observations_csv(csv_text: str) -> list[RwsLatestObservation]:
     return observations
 
 
-def normalize_latest_water_level(row: RwsLatestObservation) -> Measurement | None:
+def normalize_latest_observation(row: RwsLatestObservation) -> Measurement | None:
     if row.value is None:
         return None
-    if row.unit_code == "cm":
-        value = row.value / 100
-    else:
-        value = row.value
     if row.measured_at is None:
         return None
+    parameter = parameter_from_rws_grootheid(row.grootheid_code)
+    metadata = parameter_metadata(parameter)
+    unit_code = row.unit_code or ""
+    if unit_code not in metadata.accepted_source_units:
+        raise ExternalDataError(
+            f"Unexpected RWS unit {unit_code!r} for parameter {parameter!r}"
+        )
     return Measurement(
         measured_at=row.measured_at,
-        value=value,
-        unit=_display_unit(row.unit_code, row.hoedanigheid_code),
-        parameter="water_level",
+        value=_normalize_value(row.value, unit_code),
+        unit=_display_unit(unit_code, row.hoedanigheid_code),
+        parameter=parameter,
         quality_code=row.quality_code,
     )
+
+
+def normalize_latest_water_level(row: RwsLatestObservation) -> Measurement | None:
+    measurement = normalize_latest_observation(row)
+    if measurement is None or measurement.parameter != "water_level":
+        return None
+    return measurement
 
 
 def parse_observations_response(payload: dict[str, Any]) -> list[Measurement]:
@@ -54,8 +69,13 @@ def parse_observations_response(payload: dict[str, Any]) -> list[Measurement]:
         location = series.get("Locatie", {})
         unit_code = _nested_code(metadata, "Eenheid")
         hoedanigheid_code = _nested_code(metadata, "Hoedanigheid")
+        parameter = parameter_from_rws_grootheid(_nested_code(metadata, "Grootheid"))
+        parameter_info = parameter_metadata(parameter)
+        if unit_code not in parameter_info.accepted_source_units:
+            raise ExternalDataError(
+                f"Unexpected RWS unit {unit_code!r} for parameter {parameter!r}"
+            )
         unit = _display_unit(unit_code, hoedanigheid_code)
-        parameter = _parameter_name(_nested_code(metadata, "Grootheid"))
         source_metadata = _source_metadata(series)
 
         for item in series.get("MetingenLijst", []):
@@ -63,12 +83,10 @@ def parse_observations_response(payload: dict[str, Any]) -> list[Measurement]:
             measured_at = _parse_datetime(item.get("Tijdstip"))
             if value is None or measured_at is None:
                 continue
-            if unit_code == "cm":
-                value = value / 100
             measurements.append(
                 Measurement(
                     measured_at=measured_at,
-                    value=value,
+                    value=_normalize_value(value, unit_code),
                     unit=unit,
                     parameter=parameter,
                     quality_code=_measurement_quality_code(item),
@@ -82,10 +100,15 @@ def parse_observations_response(payload: dict[str, Any]) -> list[Measurement]:
 
 
 def _parse_latest_observation_row(row: dict[str, str]) -> RwsLatestObservation | None:
-    if row.get("GROOTHEIDCODE") != WATER_LEVEL_CODE:
+    grootheid_code = row.get("GROOTHEIDCODE")
+    try:
+        parameter = parameter_from_rws_grootheid(grootheid_code)
+    except ExternalDataError:
         return None
-    if row.get("COMPARTIMENTCODE") != SURFACE_WATER_CODE:
+    metadata = parameter_metadata(parameter)
+    if row.get("COMPARTIMENTCODE") != metadata.rws_compartiment_code:
         return None
+    hoedanigheid_code = _blank_to_none(row.get("HOEDANIGHEIDCODE"))
     quality_code = _blank_to_none(row.get("KWALITEITSWAARDE_CODE"))
     if quality_code and quality_code not in ALLOWED_QUALITY_CODES:
         return None
@@ -107,7 +130,7 @@ def _parse_latest_observation_row(row: dict[str, str]) -> RwsLatestObservation |
         quality_code=quality_code,
         grootheid_code=_required(row, "GROOTHEIDCODE"),
         compartiment_code=_required(row, "COMPARTIMENTCODE"),
-        hoedanigheid_code=_blank_to_none(row.get("HOEDANIGHEIDCODE")),
+        hoedanigheid_code=hoedanigheid_code,
         raw_metadata={
             "source_unit": _blank_to_none(row.get("EENHEIDCODE")),
             "source_parameter": _blank_to_none(row.get("GROOTHEIDCODE")),
@@ -231,7 +254,7 @@ def _display_unit(unit_code: str | None, hoedanigheid_code: str | None) -> str:
     return unit_code or ""
 
 
-def _parameter_name(grootheid_code: str | None) -> str:
-    if grootheid_code == WATER_LEVEL_CODE:
-        return "water_level"
-    return grootheid_code or "unknown"
+def _normalize_value(value: float, unit_code: str | None) -> float:
+    if unit_code == "cm":
+        return value / 100
+    return value

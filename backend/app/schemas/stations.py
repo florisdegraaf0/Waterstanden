@@ -3,6 +3,18 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+class CurrentMeasurement(BaseModel):
+    value: float | None
+    unit: str | None
+    measured_at: datetime | None
+
+
+class ParameterMetadataPayload(BaseModel):
+    label: str
+    default_unit: str
+    historical_aggregation: str
+
+
 class StationSummary(BaseModel):
     id: str
     name: str
@@ -18,6 +30,9 @@ class StationSummary(BaseModel):
     station_group: str | None = None
     station_group_label: str | None = None
     significance: str | None = None
+    available_parameters: list[str] = Field(default_factory=list)
+    parameters: dict[str, CurrentMeasurement] = Field(default_factory=dict)
+    parameter_metadata: dict[str, ParameterMetadataPayload] = Field(default_factory=dict)
 
 
 class StationDetail(StationSummary):
@@ -30,12 +45,6 @@ class MeasurementPoint(BaseModel):
     unit: str
     parameter: str
     quality_code: str | None = None
-
-
-class CurrentMeasurement(BaseModel):
-    value: float | None
-    unit: str | None
-    measured_at: datetime | None
 
 
 class SeasonalReferencePeriod(BaseModel):

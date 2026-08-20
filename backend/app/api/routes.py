@@ -10,6 +10,7 @@ from app.clients.rws.client import RwsClient
 from app.config import Settings
 from app.domain.anomaly import AnomalyConfig
 from app.domain.curated_stations import CURATED_STATION_BY_ID, CURATED_STATION_IDS
+from app.domain.parameters import SUPPORTED_PARAMETERS, parameter_metadata
 from app.domain.seasonal import SeasonalConfig
 from app.exceptions import StationNotFound
 from app.repositories.water import WaterRepository
@@ -39,6 +40,7 @@ from app.services.seasonal import SeasonalContextService
 from app.services.water import WaterService
 
 router = APIRouter(prefix="/api")
+PARAMETER_PATTERN = f"^({'|'.join(sorted(SUPPORTED_PARAMETERS))})$"
 
 
 @router.get("/health")
@@ -65,7 +67,7 @@ async def list_map_stations(
     rws_client: Annotated[RwsClient, Depends(get_rws_client)],
     settings: Annotated[Settings, Depends(get_app_settings)],
     db: Annotated[Session, Depends(get_db)],
-    parameter: str = "water_level",
+    parameter: Annotated[str, Query(pattern=PARAMETER_PATTERN)] = "water_level",
 ):
     repository = WaterRepository(db)
     stations = await WaterService(
@@ -93,7 +95,7 @@ async def get_overview(
     rws_client: Annotated[RwsClient, Depends(get_rws_client)],
     settings: Annotated[Settings, Depends(get_app_settings)],
     db: Annotated[Session, Depends(get_db)],
-    parameter: str = "water_level",
+    parameter: Annotated[str, Query(pattern=PARAMETER_PATTERN)] = "water_level",
     filter: Annotated[str, Query(pattern=f"^({'|'.join(sorted(OVERVIEW_FILTERS))})$")] = "all",
     sort: Annotated[str, Query(pattern=f"^({'|'.join(sorted(OVERVIEW_SORTS))})$")] = (
         "anomaly_score"
@@ -180,12 +182,13 @@ async def get_measurements(
     rws_client: Annotated[RwsClient, Depends(get_rws_client)],
     settings: Annotated[Settings, Depends(get_app_settings)],
     hours: Annotated[int, Query(ge=1, le=168)] = 48,
+    parameter: Annotated[str, Query(pattern=PARAMETER_PATTERN)] = "water_level",
 ):
     service = WaterService(
         rws_client,
         use_fallback_measurements=settings.rws_use_fallback_measurements,
     )
-    return await service.get_measurements(station_id, hours)
+    return await service.get_measurements(station_id, hours, parameter=parameter)
 
 
 @router.get("/stations/{station_id}/seasonal-context", response_model=StationSeasonalContext)
@@ -194,7 +197,7 @@ async def get_seasonal_context(
     rws_client: Annotated[RwsClient, Depends(get_rws_client)],
     settings: Annotated[Settings, Depends(get_app_settings)],
     db: Annotated[Session, Depends(get_db)],
-    parameter: str = "water_level",
+    parameter: Annotated[str, Query(pattern=PARAMETER_PATTERN)] = "water_level",
     current_value: float | None = None,
     current_unit: str | None = None,
     measured_at: datetime | None = None,
@@ -207,7 +210,7 @@ async def get_seasonal_context(
         current_measurements = await WaterService(
             rws_client,
             use_fallback_measurements=False,
-        ).get_measurements(station_id, 24)
+        ).get_measurements(station_id, 24, parameter=parameter)
 
     context = SeasonalContextService(
         WaterRepository(db),
@@ -264,7 +267,7 @@ async def get_station_anomaly(
     rws_client: Annotated[RwsClient, Depends(get_rws_client)],
     settings: Annotated[Settings, Depends(get_app_settings)],
     db: Annotated[Session, Depends(get_db)],
-    parameter: str = "water_level",
+    parameter: Annotated[str, Query(pattern=PARAMETER_PATTERN)] = "water_level",
 ):
     if station_id not in CURATED_STATION_IDS:
         raise StationNotFound(f"Station {station_id!r} was not found")
@@ -342,6 +345,8 @@ def _anomaly_signal_payload(signal) -> AnomalySignalPayload:
 
 def _station_summary_payload(station) -> StationSummary:
     curated = CURATED_STATION_BY_ID.get(station.id)
+    parameters = station.parameters or {}
+    available_parameters = list(station.available_parameters or parameters.keys())
     return StationSummary(
         id=station.id,
         name=station.name,
@@ -369,6 +374,19 @@ def _station_summary_payload(station) -> StationSummary:
         significance=(
             curated.significance if curated else _metadata_string(station.metadata, "significance")
         ),
+        available_parameters=available_parameters,
+        parameters={
+            parameter: CurrentMeasurement(
+                value=measurement.value,
+                unit=measurement.unit,
+                measured_at=measurement.measured_at,
+            )
+            for parameter, measurement in parameters.items()
+        },
+        parameter_metadata={
+            parameter: _parameter_metadata_payload(parameter)
+            for parameter in available_parameters
+        },
     )
 
 
@@ -407,6 +425,17 @@ def _map_station_payload(station, overview_station) -> MapStationPayload:
 def _metadata_string(metadata: dict, key: str) -> str | None:
     value = metadata.get(key)
     return value if isinstance(value, str) else None
+
+
+def _parameter_metadata_payload(parameter: str):
+    metadata = parameter_metadata(parameter)
+    from app.schemas.stations import ParameterMetadataPayload
+
+    return ParameterMetadataPayload(
+        label=metadata.label,
+        default_unit=metadata.default_unit,
+        historical_aggregation=metadata.historical_aggregation,
+    )
 
 
 def _overview_station_payload(station) -> OverviewStationPayload:

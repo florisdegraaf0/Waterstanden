@@ -13,9 +13,12 @@ import type { MeasurementPoint } from "@/lib/api";
 
 type Props = {
   measurements: MeasurementPoint[];
+  label: string;
+  unit: string;
 };
 
-export function WaterLevelChart({ measurements }: Props) {
+export function MeasurementChart({ measurements, label, unit }: Props) {
+  const decimals = unit === "m3/s" ? 0 : 2;
   const data = measurements.map((point) => ({
     time: new Intl.DateTimeFormat("nl-NL", {
       hour: "2-digit",
@@ -23,7 +26,7 @@ export function WaterLevelChart({ measurements }: Props) {
       day: "2-digit",
       month: "2-digit"
     }).format(new Date(point.measured_at)),
-    value: roundMeters(point.value)
+    value: roundValue(point.value, decimals)
   }));
 
   return (
@@ -38,15 +41,15 @@ export function WaterLevelChart({ measurements }: Props) {
             minTickGap={28}
           />
           <YAxis
-            width={42}
+            width={52}
             tick={{ fontSize: 11, fill: "#5b6770" }}
             tickLine={false}
             axisLine={{ stroke: "#d7e0de" }}
-            domain={["dataMin - 0.1", "dataMax + 0.1"]}
-            tickFormatter={(value) => formatMeters(Number(value))}
+            domain={["dataMin", "dataMax"]}
+            tickFormatter={(value) => formatValue(Number(value), decimals)}
           />
           <Tooltip
-            formatter={(value) => [`${formatMeters(Number(value))} m`, "Waterhoogte"]}
+            formatter={(value) => [`${formatValue(Number(value), decimals)} ${unit}`, label]}
             labelClassName="text-xs text-slate-500"
             contentStyle={{ borderRadius: 6, borderColor: "#d7e0de" }}
           />
@@ -57,10 +60,11 @@ export function WaterLevelChart({ measurements }: Props) {
   );
 }
 
-function roundMeters(value: number): number {
-  return Math.round(value * 100) / 100;
+function roundValue(value: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
 }
 
-function formatMeters(value: number): string {
-  return roundMeters(value).toFixed(2);
+function formatValue(value: number, decimals: number): string {
+  return roundValue(value, decimals).toFixed(decimals);
 }
