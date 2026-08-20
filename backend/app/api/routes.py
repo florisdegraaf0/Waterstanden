@@ -68,32 +68,12 @@ async def list_map_stations(
     parameter: str = "water_level",
 ):
     repository = WaterRepository(db)
-    water_service = WaterService(
+    stations = await WaterService(
         rws_client,
-        use_fallback_measurements=False,
         active_station_max_age_hours=settings.active_station_max_age_hours,
         active_station_recent_check_concurrency=settings.active_station_recent_check_concurrency,
         active_station_verify_recent_measurements=settings.active_station_verify_recent_measurements,
-    )
-    stations = await water_service.list_stations()
-    overview_service = OverviewService(
-        water_service=water_service,
-        repository=repository,
-        seasonal_config=SeasonalConfig(
-            window_days=settings.seasonal_window_days,
-            min_sample_size=settings.seasonal_min_sample_size,
-            min_years=settings.seasonal_min_years,
-        ),
-        anomaly_config=AnomalyConfig(
-            seasonal_window_days=settings.seasonal_window_days,
-            delta_tolerance_minutes=settings.anomaly_delta_tolerance_minutes,
-            recent_window_hours=settings.anomaly_recent_window_hours,
-            stale_after_minutes=settings.anomaly_stale_after_minutes,
-        ),
-        cache_ttl=timedelta(minutes=settings.overview_cache_ttl_minutes),
-        recent_measurement_concurrency=settings.active_station_recent_check_concurrency,
-    )
-    await overview_service.get_overview(parameter=parameter, limit=200)
+    ).list_stations()
     try:
         snapshots = {
             station.station_id: station

@@ -8,7 +8,7 @@ from app.api import routes
 from app.api.dependencies import get_db, get_rws_client
 from app.clients.rws.models import RwsLatestObservation
 from app.domain.models import DailyStatistic, Measurement
-from app.domain.overview import OverviewPrimarySignal, OverviewResult, OverviewStation
+from app.domain.overview import OverviewPrimarySignal, OverviewStation
 from app.main import app
 
 RECENT_MEASURED_AT = datetime.now(UTC).replace(microsecond=0)
@@ -147,15 +147,10 @@ async def test_map_stations_endpoint_returns_group_and_anomaly_summary(
 
     class FakeOverviewService:
         def __init__(self, **_kwargs) -> None:
-            pass
+            raise AssertionError("map station loading should not refresh overview synchronously")
 
-        async def get_overview(self, **_kwargs):
-            return OverviewResult(
-                generated_at=RECENT_MEASURED_AT,
-                summary=object(),
-                coverage=object(),
-                stations=[snapshot],
-            )
+        async def get_overview(self, **_kwargs):  # pragma: no cover
+            raise AssertionError("map station loading should not refresh overview synchronously")
 
     monkeypatch.setattr(routes, "WaterRepository", FakeRepository)
     monkeypatch.setattr(routes, "OverviewService", FakeOverviewService)
